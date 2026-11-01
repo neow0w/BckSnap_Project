@@ -1,0 +1,188 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../services/api_client.dart';
+import '../../services/clinic_service.dart';
+
+/// Shared by the receptionist (Fig 9, isReception: true) and the doctor
+/// (Fig 10, isReception: false).
+class StaffAppointmentsScreen extends StatefulWidget {
+  const StaffAppointmentsScreen({super.key, required this.isReception});
+
+  final bool isReception;
+
+  @override
+  State<StaffAppointmentsScreen> createState() =>
+      _StaffAppointmentsScreenState();
+}
+
+class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
+  final ClinicService _service = ClinicService();
+  List<ClinicAppointment> _appointments = [];
+  bool _loading = true;
+  String? _workingId;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final appointments = await _service.staffAppointments(
+        state: widget.isReception ? 'pending' : null,
+      );
+      if (mounted) setState(() => _appointments = appointments);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _review(ClinicAppointment appointment, bool approve) async {
+    setState(() {
+      _workingId = appointment.id;
+      _error = null;
+    });
+    try {
+      await _service.reviewAppointment(appointment.id, approve: approve);
+      await _load();
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _workingId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(
+        widget.isReception
+            ? 'Clinic appointment requests'
+            : 'Clinic appointments',
+      ),
+      actions: [
+        if (widget.isReception)
+          IconButton(
+            tooltip: 'Messages',
+            onPressed: () => context.push('/reception/inbox'),
+            icon: const Icon(Icons.inbox_outlined),
+          ),
+        IconButton(
+          tooltip: 'My profile',
+          onPressed: () => context.push('/profile'),
+          icon: const Icon(Icons.person_outline),
+        ),
+        IconButton(
+          tooltip: 'Refresh',
+          onPressed: _load,
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+    ),
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: Column(
+          children: [
+            if (_loading) const LinearProgressIndicator(),
+            if (_error != null)
+              MaterialBanner(
+                content: Text(_error!),
+                actions: [
+                  TextButton(onPressed: _load, child: const Text('Retry')),
+                ],
+              ),
+            Expanded(
+              child: _loading && _appointments.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : _appointments.isEmpty
+                  ? Center(
+                      child: Text(
+                        widget.isReception
+                            ? 'There are no pending appointment requests.'
+                            : 'There are no clinic appointments.',
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _appointments.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) =>
+                            _card(context, _appointments[index]),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _card(BuildContext context, ClinicAppointment appointment) {
+    final working = _workingId == appointment.id;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              appointment.clinicName ?? 'Clinic information unavailable',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text('Patient: ${appointment.patientName ?? appointment.userId}'),
+            if (appointment.doctorName != null)
+              Text('Doctor: ${appointment.doctorName}'),
+            if (appointment.scheduledAt != null)
+              Text('Time: ${appointment.scheduledAt!.toLocal()}'),
+            Text(
+              'Type: ${appointment.mode == 'online' ? 'Online' : 'In person'}',
+            ),
+            Text('Reference: ${appointment.reference ?? 'Unavailable'}'),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                if (widget.isReception && appointment.status == 'pending') ...[
+                  FilledButton.icon(
+                    onPressed: working
+                        ? null
+                        : () => _review(appointment, true),
+                    icon: const Icon(Icons.check),
+                    label: const Text('Approve'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: working
+                        ? null
+                        : () => _review(appointment, false),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Reject'),
+                  ),
+                ] else
+                  Chip(label: Text(appointmentStatusLabel(appointment.status))),
+                if (working)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

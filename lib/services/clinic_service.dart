@@ -1,0 +1,822 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart' hide GeoPoint;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' as http;
+
+import 'api_client.dart';
+import 'auth_service.dart';
+import 'audit_log.dart';
+
+class GeoPoint {
+  const GeoPoint({
+    required this.label,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  final String label;
+  final double latitude;
+  final double longitude;
+}
+
+class ClinicDoctor {
+  const ClinicDoctor({
+    required this.id,
+    required this.userId,
+    required this.name,
+    required this.specializations,
+    required this.professionalInfo,
+    required this.supportsOnline,
+    required this.supportsPhysical,
+    this.isDemo = false,
+  });
+
+  final String id;
+  final String userId;
+  final String? name;
+  final List<String> specializations;
+  final String? professionalInfo;
+  final bool supportsOnline;
+  final bool supportsPhysical;
+  final bool isDemo;
+
+  factory ClinicDoctor.fromMap(String id, Map<String, dynamic> m) =>
+      ClinicDoctor(
+        id: id,
+        userId: (m['userId'] as String?) ?? id,
+        name: m['name'] as String?,
+        specializations: [
+          for (final s in (m['specializations'] as List? ?? const []))
+            s.toString(),
+        ],
+        professionalInfo: m['professionalInfo'] as String?,
+        supportsOnline: m['supportsOnline'] as bool? ?? true,
+        supportsPhysical: m['supportsPhysical'] as bool? ?? true,
+      );
+}
+
+class ClinicDemoAppointmentType {
+  const ClinicDemoAppointmentType({
+    required this.mode,
+    required this.name,
+    required this.simulationOnly,
+  });
+
+  final String mode;
+  final String name;
+  final bool simulationOnly;
+}
+
+class ClinicInfo {
+  const ClinicInfo({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.address,
+    required this.latitude,
+    required this.longitude,
+    required this.phone,
+    required this.email,
+    required this.timezone,
+    required this.operatingHours,
+    required this.supportsOnline,
+    required this.supportsPhysical,
+    this.demoOperatingHours = const {},
+    this.demoAppointmentTypes = const [],
+    required this.services,
+    required this.doctors,
+    required this.distanceKm,
+  });
+
+  final String id;
+  final String name;
+  final String? description;
+  final String address;
+  final double? latitude;
+  final double? longitude;
+  final String? phone;
+  final String? email;
+  final String timezone;
+  final Map<String, dynamic> operatingHours;
+  final bool supportsOnline;
+  final bool supportsPhysical;
+  final Map<String, dynamic> demoOperatingHours;
+  final List<ClinicDemoAppointmentType> demoAppointmentTypes;
+  final List<String> services;
+  final List<ClinicDoctor> doctors;
+  final double? distanceKm;
+
+  bool get hasMapLocation =>
+      latitude != null &&
+      longitude != null &&
+      latitude!.isFinite &&
+      longitude!.isFinite &&
+      latitude! >= -90 &&
+      latitude! <= 90 &&
+      longitude! >= -180 &&
+      longitude! <= 180;
+
+  factory ClinicInfo.fromMap(
+    String id,
+    Map<String, dynamic> m, {
+    List<ClinicDoctor> doctors = const [],
+    double? distanceKm,
+  }) => ClinicInfo(
+    id: id,
+    name: (m['name'] as String?) ?? 'Clinic',
+    description: m['description'] as String?,
+    address: (m['address'] as String?) ?? '',
+    latitude: (m['latitude'] as num?)?.toDouble(),
+    longitude: (m['longitude'] as num?)?.toDouble(),
+    phone: m['phone'] as String?,
+    email: m['email'] as String?,
+    timezone: (m['timezone'] as String?) ?? 'Asia/Manila',
+    operatingHours: Map<String, dynamic>.from(
+      m['operatingHours'] as Map? ?? const {},
+    ),
+    supportsOnline: m['supportsOnline'] as bool? ?? false,
+    supportsPhysical: m['supportsPhysical'] as bool? ?? false,
+    services: [
+      for (final s in (m['services'] as List? ?? const [])) s.toString(),
+    ],
+    doctors: doctors,
+    distanceKm: distanceKm,
+  );
+}
+
+class AppointmentSlot {
+  const AppointmentSlot({
+    required this.startsAt,
+    required this.endsAt,
+    required this.mode,
+  });
+
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final String mode;
+}
+
+class ClinicAppointment {
+  const ClinicAppointment({
+    required this.id,
+    required this.userId,
+    required this.status,
+    required this.mode,
+    required this.scheduledAt,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.clinicId,
+    required this.clinicName,
+    required this.clinicAddress,
+    required this.doctorId,
+    required this.doctorName,
+    required this.reference,
+    required this.cancellationReason,
+    this.patientName,
+    this.isDemo = false,
+  });
+
+  final String id;
+  final String userId;
+  final String? patientName;
+  final String status;
+  final String? mode;
+  final DateTime? scheduledAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String? clinicId;
+  final String? clinicName;
+  final String? clinicAddress;
+  final String? doctorId;
+  final String? doctorName;
+  final String? reference;
+  final String? cancellationReason;
+  final bool isDemo;
+
+  bool get canCancel =>
+      (status == 'pending' || status == 'approved') &&
+      scheduledAt != null &&
+      scheduledAt!.difference(DateTime.now().toUtc()) >=
+          const Duration(hours: 24);
+}
+
+class ClinicNotification {
+  const ClinicNotification({
+    required this.id,
+    required this.appointmentId,
+    required this.eventType,
+    required this.title,
+    required this.message,
+    required this.createdAt,
+    required this.isRead,
+  });
+
+  final String id;
+  final String appointmentId;
+  final String eventType;
+  final String title;
+  final String message;
+  final DateTime createdAt;
+  final bool isRead;
+}
+
+DateTime? _dt(dynamic v) => v is Timestamp ? v.toDate() : null;
+
+class ClinicService {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AuthService _auth = AuthService();
+
+  static const _days = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ];
+
+  // ---- helpers ----------------------------------------------------------
+
+  dynamic get _me {
+    final u = _auth.currentUser;
+    if (u == null) throw ApiException(401, 'Please log in again.');
+    return u;
+  }
+
+  Future<T> _guard<T>(Future<T> Function() run) async {
+    try {
+      return await run();
+    } on FirebaseException catch (e) {
+      throw apiErrorFrom(e);
+    }
+  }
+
+  static double _km(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371.0;
+    double rad(double d) => d * math.pi / 180;
+    final dLat = rad(lat2 - lat1);
+    final dLon = rad(lon2 - lon1);
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(rad(lat1)) *
+            math.cos(rad(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    return 2 * r * math.asin(math.sqrt(a));
+  }
+
+  static String _reference() {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    final r = math.Random.secure();
+    return 'BCK-${List.generate(6, (_) => chars[r.nextInt(chars.length)]).join()}';
+  }
+
+  static DateTime _at(DateTime date, String hhmm) {
+    final p = hhmm.split(':');
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      int.tryParse(p[0]) ?? 9,
+      p.length > 1 ? int.tryParse(p[1]) ?? 0 : 0,
+    );
+  }
+
+  ClinicAppointment _appt(String id, Map<String, dynamic> m) {
+    final created = _dt(m['createdAt']) ?? DateTime.now();
+    return ClinicAppointment(
+      id: id,
+      userId: (m['userId'] as String?) ?? '',
+      patientName: m['patientName'] as String?,
+      status: (m['status'] as String?) ?? 'pending',
+      mode: m['mode'] as String?,
+      scheduledAt: _dt(m['scheduledAt'])?.toUtc(),
+      createdAt: created,
+      updatedAt: _dt(m['updatedAt']) ?? created,
+      clinicId: m['clinicId'] as String?,
+      clinicName: m['clinicName'] as String?,
+      clinicAddress: m['clinicAddress'] as String?,
+      doctorId: m['doctorId'] as String?,
+      doctorName: m['doctorName'] as String?,
+      reference: m['reference'] as String?,
+      cancellationReason: m['cancellationReason'] as String?,
+    );
+  }
+
+  bool _inState(ClinicAppointment a, String? state) {
+    final now = DateTime.now().toUtc();
+    final at = a.scheduledAt;
+    switch (state) {
+      case 'pending':
+        return a.status == 'pending';
+      case 'upcoming':
+        return a.status == 'approved' && at != null && at.isAfter(now);
+      case 'past':
+        return at != null &&
+            at.isBefore(now) &&
+            (a.status == 'approved' || a.status == 'completed');
+      case 'cancelled':
+        return a.status == 'cancelled' ||
+            a.status == 'rejected' ||
+            a.status == 'declined';
+      default:
+        return true;
+    }
+  }
+
+  // ---- clinics ----------------------------------------------------------
+
+  /// Kept so the discovery screen needs no change.
+  Future<void> checkHealth() async {}
+
+  Future<List<ClinicInfo>> search({
+    String? query,
+    GeoPoint? location,
+    double radiusKm = 50,
+    String? service,
+    String? mode,
+  }) => _guard(() async {
+    final snap = await _db.collection('clinics').get();
+    final q = (query ?? '').trim().toLowerCase();
+    final s = (service ?? '').trim().toLowerCase();
+    final out = <ClinicInfo>[];
+    for (final d in snap.docs) {
+      final m = d.data();
+      if (q.isNotEmpty &&
+          !((m['name'] as String?) ?? '').toLowerCase().contains(q)) {
+        continue;
+      }
+      if (s.isNotEmpty &&
+          !((m['services'] as List? ?? const []).any(
+            (e) => e.toString().toLowerCase().contains(s),
+          ))) {
+        continue;
+      }
+      if (mode == 'physical' && m['supportsPhysical'] != true) continue;
+      if (mode == 'online' && m['supportsOnline'] != true) continue;
+
+      double? dist;
+      if (location != null) {
+        final lat = (m['latitude'] as num?)?.toDouble();
+        final lon = (m['longitude'] as num?)?.toDouble();
+        if (lat == null || lon == null) continue;
+        dist = _km(location.latitude, location.longitude, lat, lon);
+        if (dist > radiusKm) continue;
+      }
+      out.add(ClinicInfo.fromMap(d.id, m, distanceKm: dist));
+    }
+    out.sort(
+      (a, b) => location != null
+          ? (a.distanceKm ?? 0).compareTo(b.distanceKm ?? 0)
+          : a.name.compareTo(b.name),
+    );
+    return out;
+  });
+
+  /// Place search through OpenStreetMap Nominatim (free, no key).
+  Future<List<GeoPoint>> geocode(String query) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': query.trim(),
+        'format': 'jsonv2',
+        'limit': '5',
+      });
+      final res = await http
+          .get(
+            uri,
+            headers: {
+              'Accept': 'application/json',
+              if (!kIsWeb) 'User-Agent': 'flutter_bcksnap/1.0',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) {
+        throw ApiException(
+          res.statusCode,
+          'Location search failed. Please try again.',
+        );
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+      return [
+        for (final item in data.whereType<Map>())
+          GeoPoint(
+            label: item['display_name'] as String,
+            latitude: double.parse(item['lat'] as String),
+            longitude: double.parse(item['lon'] as String),
+          ),
+      ];
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(
+        0,
+        'Cannot reach the location service. Check your connection.',
+      );
+    }
+  }
+
+  /// Admin: saves the pin for their own clinic.
+  Future<void> updateClinicLocation(double latitude, double longitude) =>
+      _guard(() async {
+        final clinicId = _me.clinicId;
+        if (clinicId == null) {
+          throw ApiException(403, 'No clinic is assigned to this account.');
+        }
+        final batch = _db.batch();
+        batch.update(_db.collection('clinics').doc(clinicId), {
+          'latitude': latitude,
+          'longitude': longitude,
+        });
+        AuditLog.addTo(
+          batch,
+          action: 'clinic.location_updated',
+          targetType: 'clinic',
+          targetId: clinicId,
+          details:
+              '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}',
+        );
+        await batch.commit();
+      });
+
+  Future<ClinicInfo> clinic(String id) => _guard(() async {
+    final snap = await _db.collection('clinics').doc(id).get();
+    final data = snap.data();
+    if (data == null) throw ApiException(404, 'Clinic not found.');
+    final docs = await _db
+        .collection('doctors')
+        .where('clinicId', isEqualTo: id)
+        .where('active', isEqualTo: true)
+        .get();
+    return ClinicInfo.fromMap(
+      snap.id,
+      data,
+      doctors: [
+        for (final d in docs.docs) ClinicDoctor.fromMap(d.id, d.data()),
+      ],
+    );
+  });
+
+  // ---- slots and booking --------------------------------------------------
+
+  /// Half-hour slots inside the clinic's operating hours, minus booked ones.
+  /// With no hours saved on the clinic, Mon-Fri 09:00-17:00 is used.
+  Future<List<AppointmentSlot>> slots({
+    required String clinicId,
+    required String doctorId,
+    required DateTime date,
+    required String mode,
+  }) => _guard(() async {
+    final c = await _db.collection('clinics').doc(clinicId).get();
+    final hours = Map<String, dynamic>.from(
+      c.data()?['operatingHours'] as Map? ?? const {},
+    );
+    var open = '09:00';
+    var close = '17:00';
+    var closed = false;
+    if (hours.isEmpty) {
+      closed = date.weekday >= 6;
+    } else {
+      final day = hours[_days[date.weekday - 1]];
+      if (day is! Map || day['closed'] == true) {
+        closed = true;
+      } else {
+        open = day['open']?.toString() ?? open;
+        close = day['close']?.toString() ?? close;
+      }
+    }
+    if (closed) return <AppointmentSlot>[];
+
+    final booked = await _db
+        .collection('bookedSlots')
+        .where('doctorId', isEqualTo: doctorId)
+        .get();
+    final taken = {
+      for (final d in booked.docs)
+        (d.data()['startsAt'] as Timestamp).millisecondsSinceEpoch,
+    };
+
+    const step = Duration(minutes: 30);
+    final end = _at(date, close);
+    final now = DateTime.now();
+    final out = <AppointmentSlot>[];
+    for (var t = _at(date, open); !t.add(step).isAfter(end); t = t.add(step)) {
+      if (t.isAfter(now) && !taken.contains(t.millisecondsSinceEpoch)) {
+        out.add(AppointmentSlot(startsAt: t, endsAt: t.add(step), mode: mode));
+      }
+    }
+    return out;
+  });
+
+  Future<ClinicAppointment> book({
+    required String clinicId,
+    required String doctorId,
+    required String mode,
+    required DateTime startsAt,
+  }) => _guard(() async {
+    final me = _me;
+    final clinicSnap = await _db.collection('clinics').doc(clinicId).get();
+    final doctorSnap = await _db.collection('doctors').doc(doctorId).get();
+    final clinic = clinicSnap.data() ?? {};
+
+    final ref = _db.collection('appointments').doc();
+    // One document per doctor and time: a second booking of the same time
+    // is refused by the security rules, so nobody can double-book.
+    final slotId = '${doctorId}_${startsAt.millisecondsSinceEpoch}';
+    final batch = _db.batch();
+    final reference = _reference();
+    AuditLog.addTo(
+      batch,
+      action: 'appointment.booked',
+      clinicId: clinicId,
+      targetType: 'appointment',
+      targetId: ref.id,
+      targetName: reference,
+      details: '${doctorSnap.data()?['name'] ?? 'doctor'}, $mode',
+    );
+    batch.set(_db.collection('bookedSlots').doc(slotId), {
+      'doctorId': doctorId,
+      'clinicId': clinicId,
+      'userId': me.id,
+      'appointmentId': ref.id,
+      'startsAt': Timestamp.fromDate(startsAt),
+    });
+    batch.set(ref, {
+      'userId': me.id,
+      'patientName': me.displayName ?? 'Patient',
+      'clinicId': clinicId,
+      'clinicName': clinic['name'],
+      'clinicAddress': clinic['address'],
+      'doctorId': doctorId,
+      'doctorName': doctorSnap.data()?['name'],
+      'mode': mode,
+      'scheduledAt': Timestamp.fromDate(startsAt),
+      'status': 'pending',
+      'reference': reference,
+      'slotId': slotId,
+      'cancellationReason': null,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    try {
+      await batch.commit();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw ApiException(
+          409,
+          'That time was just taken. Please choose another.',
+        );
+      }
+      rethrow;
+    }
+    final saved = await ref.get();
+    return _appt(saved.id, saved.data()!);
+  });
+
+  Future<List<ClinicAppointment>> appointments({String? state}) =>
+      _guard(() async {
+        final snap = await _db
+            .collection('appointments')
+            .where('userId', isEqualTo: _me.id)
+            .get();
+        final list = [for (final d in snap.docs) _appt(d.id, d.data())]
+            .where((a) => _inState(a, state))
+            .toList();
+        list.sort(
+          (a, b) => (b.scheduledAt ?? b.createdAt).compareTo(
+            a.scheduledAt ?? a.createdAt,
+          ),
+        );
+        return list;
+      });
+
+  Future<ClinicAppointment> appointment(String id) => _guard(() async {
+    final snap = await _db.collection('appointments').doc(id).get();
+    final data = snap.data();
+    if (data == null) throw ApiException(404, 'Appointment not found.');
+    return _appt(snap.id, data);
+  });
+
+  Future<ClinicAppointment> cancel(String id, String reason) =>
+      _guard(() async {
+        final ref = _db.collection('appointments').doc(id);
+        final snap = await ref.get();
+        final slotId = snap.data()?['slotId'] as String?;
+        final batch = _db.batch();
+        AuditLog.addTo(
+          batch,
+          action: 'appointment.cancelled',
+          clinicId: snap.data()?['clinicId'] as String?,
+          targetType: 'appointment',
+          targetId: id,
+          targetName: snap.data()?['reference'] as String?,
+          details: reason.trim(),
+        );
+        batch.update(ref, {
+          'status': 'cancelled',
+          'cancellationReason': reason.trim(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        if (slotId != null) {
+          batch.delete(_db.collection('bookedSlots').doc(slotId));
+        }
+        await batch.commit();
+        final saved = await ref.get();
+        return _appt(saved.id, saved.data()!);
+      });
+
+  /// Free video room (Jitsi Meet), named after the appointment reference.
+  Future<String> consultation(String id) async {
+    final a = await appointment(id);
+    if (a.status != 'approved' || a.mode != 'online' || a.reference == null) {
+      throw ApiException(
+        409,
+        'The consultation link is only available for approved online appointments.',
+      );
+    }
+    return 'https://meet.jit.si/${a.reference}';
+  }
+
+  // ---- notifications ------------------------------------------------------
+
+  Future<List<ClinicNotification>> notifications({bool unreadOnly = false}) =>
+      _guard(() async {
+        final snap = await _db
+            .collection('notifications')
+            .where('userId', isEqualTo: _me.id)
+            .get();
+        final list = [
+          for (final d in snap.docs)
+            ClinicNotification(
+              id: d.id,
+              appointmentId: (d.data()['appointmentId'] as String?) ?? '',
+              eventType: (d.data()['eventType'] as String?) ?? '',
+              title: (d.data()['title'] as String?) ?? '',
+              message: (d.data()['message'] as String?) ?? '',
+              createdAt: _dt(d.data()['createdAt']) ?? DateTime.now(),
+              isRead: d.data()['read'] == true,
+            ),
+        ].where((n) => !unreadOnly || !n.isRead).toList();
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return list;
+      });
+
+  Future<void> markNotificationRead(String id) => _guard(
+    () => _db.collection('notifications').doc(id).update({'read': true}),
+  );
+
+  // ---- staff ------------------------------------------------------------
+
+  /// Receptionist: all requests of the clinic. Doctor: only their own.
+  Future<List<ClinicAppointment>> staffAppointments({String? state}) =>
+      _guard(() async {
+        final me = _me;
+        Query<Map<String, dynamic>> q = _db
+            .collection('appointments')
+            .where('clinicId', isEqualTo: me.clinicId);
+        if (me.role == 'doctor') q = q.where('doctorId', isEqualTo: me.id);
+        final snap = await q.get();
+        final list = [for (final d in snap.docs) _appt(d.id, d.data())]
+            .where((a) => _inState(a, state))
+            .toList();
+        list.sort(
+          (a, b) => (a.scheduledAt ?? a.createdAt).compareTo(
+            b.scheduledAt ?? b.createdAt,
+          ),
+        );
+        return list;
+      });
+
+  Future<void> reviewAppointment(String id, {required bool approve}) =>
+      _guard(() async {
+        final me = _me;
+        final ref = _db.collection('appointments').doc(id);
+        final snap = await ref.get();
+        final data = snap.data();
+        if (data == null) throw ApiException(404, 'Appointment not found.');
+        final batch = _db.batch();
+        AuditLog.addTo(
+          batch,
+          action: approve ? 'appointment.approved' : 'appointment.rejected',
+          targetType: 'appointment',
+          targetId: id,
+          targetName: data['reference'] as String?,
+          details: 'Patient: ${data['patientName'] ?? ''}',
+        );
+        batch.update(ref, {
+          'status': approve ? 'approved' : 'rejected',
+          'reviewedBy': me.id,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        batch.set(_db.collection('notifications').doc(), {
+          'userId': data['userId'],
+          'appointmentId': id,
+          'eventType': approve ? 'approved' : 'rejected',
+          'title': approve ? 'Appointment approved' : 'Appointment rejected',
+          'message':
+              'Your appointment ${data['reference']} was '
+              '${approve ? 'approved' : 'rejected'} by the clinic.',
+          'read': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        final slotId = data['slotId'] as String?;
+        if (!approve && slotId != null) {
+          batch.delete(_db.collection('bookedSlots').doc(slotId));
+        }
+        await batch.commit();
+      });
+
+  /// Live list for the website: receptionist = whole clinic, doctor = own.
+  Stream<List<ClinicAppointment>> staffAppointmentsStream() {
+    final me = _me;
+    Query<Map<String, dynamic>> q = _db
+        .collection('appointments')
+        .where('clinicId', isEqualTo: me.clinicId);
+    if (me.role == 'doctor') q = q.where('doctorId', isEqualTo: me.id);
+    return q.snapshots().map((snap) {
+      final list = [for (final d in snap.docs) _appt(d.id, d.data())];
+      list.sort(
+        (a, b) => (a.scheduledAt ?? a.createdAt).compareTo(
+          b.scheduledAt ?? b.createdAt,
+        ),
+      );
+      return list;
+    });
+  }
+
+  /// The receptionists and doctors of the clinic (read-only).
+  Future<List<Map<String, dynamic>>> staffList() => _guard(() async {
+    final snap = await _db
+        .collection('users')
+        .where('clinicId', isEqualTo: _me.clinicId)
+        .get();
+    final list = [
+      for (final d in snap.docs)
+        if (d.data()['role'] == 'doctor' || d.data()['role'] == 'receptionist')
+          {
+            'id': d.id,
+            'name': d.data()['name'],
+            'email': d.data()['email'],
+            'role': d.data()['role'],
+            'status': d.data()['status'] ?? 'active',
+            'professions': d.data()['professions'] ?? const [],
+          },
+    ];
+    list.sort(
+      (a, b) =>
+          '${a['name']}'.toLowerCase().compareTo('${b['name']}'.toLowerCase()),
+    );
+    return list;
+  });
+
+  /// Admin: activate or deactivate a staff account.
+  Future<void> setStaffActive(
+    String id,
+    String role,
+    bool active,
+    String name,
+  ) => _guard(() async {
+    final batch = _db.batch();
+    batch.update(_db.collection('users').doc(id), {
+      'status': active ? 'active' : 'inactive',
+    });
+    // A doctor is only bookable by patients while active.
+    if (role == 'doctor') {
+      batch.update(_db.collection('doctors').doc(id), {'active': active});
+    }
+    AuditLog.addTo(
+      batch,
+      action: active ? 'staff.activated' : 'staff.deactivated',
+      targetType: 'user',
+      targetId: id,
+      targetName: name,
+      details: role,
+    );
+    await batch.commit();
+  });
+
+  /// Admin: the latest audit log entries of the clinic.
+  Future<List<Map<String, dynamic>>> auditLogs() => _guard(() async {
+    final snap = await _db
+        .collection('auditLogs')
+        .where('clinicId', isEqualTo: _me.clinicId)
+        .orderBy('createdAt', descending: true)
+        .limit(300)
+        .get();
+    return [
+      for (final d in snap.docs)
+        {...d.data(), 'id': d.id, 'createdAt': _dt(d.data()['createdAt'])},
+    ];
+  });
+}
+
+String appointmentStatusLabel(String status) => switch (status) {
+  'pending' => 'Pending',
+  'approved' => 'Approved',
+  'rejected' || 'declined' => 'Rejected',
+  'cancelled' => 'Cancelled',
+  'completed' => 'Completed',
+  _ => status,
+};
