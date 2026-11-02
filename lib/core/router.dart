@@ -20,6 +20,7 @@ import '../features/screening/result_screen.dart';
 import '../features/screening/measurement_screen.dart';
 import '../features/user/appointment_booking_screen.dart';
 import '../features/user/appointments_screen.dart';
+import '../features/user/consultation_screen.dart';
 import '../features/user/clinic_details_screen.dart';
 import '../features/user/clinic_discovery_screen.dart';
 import '../features/user/home_screen.dart';
@@ -36,6 +37,7 @@ import '../features/admin/admin_screen.dart';
 import '../features/admin/audit_log_screen.dart';
 import '../features/screening/person_info_screen.dart';
 import '../features/screening/screening_for_screen.dart';
+import '../features/web/web_doctor_schedule_page.dart';
 
 /// Where each role lands after login (connectors A, B, C in the SFD).
 String homeFor(String role) {
@@ -56,6 +58,7 @@ const _protected = [
   '/home',
   '/clinics',
   '/appointments',
+  '/consultation',
   '/notifications',
   '/message',
   '/admin',
@@ -84,11 +87,13 @@ bool _roleAllowed(String role, String loc) {
     case 'receptionist':
       return _under(loc, '/reception');
     case 'doctor':
-      return _under(loc, '/doctor');
+      return _under(loc, '/doctor') ||
+          _under(loc, '/consultation');
     default:
       return _under(loc, '/home') ||
           _under(loc, '/clinics') ||
           _under(loc, '/appointments') ||
+          _under(loc, '/consultation') ||
           _under(loc, '/notifications') ||
           _under(loc, '/message') ||
           _under(loc, '/screening') ||
@@ -165,6 +170,10 @@ final List<RouteBase> _webRoutes = [
         path: '/doctor/patients',
         builder: (c, s) => const WebPatientsPage(),
       ),
+      GoRoute(
+        path: '/doctor/schedule',
+        builder: (c, s) => const WebDoctorSchedulePage(),
+      ),
     ],
   ),
 ];
@@ -231,6 +240,17 @@ final List<RouteBase> _mobileRoutes = [
     path: '/appointments/:id',
     builder: (c, s) =>
         AppointmentDetailsScreen(appointmentId: s.pathParameters['id']!),
+  ),
+  GoRoute(
+    path: '/consultation/:id',
+    builder: (c, s) {
+      final credentials = s.extra as Map<String, dynamic>;
+
+      return ConsultationScreen(
+        appointmentId: s.pathParameters['id']!,
+        credentials: credentials,
+      );
+    },
   ),
   GoRoute(
     path: '/notifications',

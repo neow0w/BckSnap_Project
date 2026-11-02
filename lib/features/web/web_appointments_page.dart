@@ -66,10 +66,16 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
 
   String _when(BuildContext context, DateTime? t) {
     if (t == null) return '-';
-    final local = t.toLocal();
-    final time = MaterialLocalizations.of(context)
-        .formatTimeOfDay(TimeOfDay.fromDateTime(local));
-    return '${formatDate(local)}, $time';
+    final localStart = t.toLocal();
+    final localEnd = localStart.add(const Duration(minutes: 60));
+    final localizations = MaterialLocalizations.of(context);
+    final startTime = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(localStart),
+    );
+    final endTime = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(localEnd),
+    );
+    return '${formatDate(localStart)}, $startTime - $endTime';
   }
 
   Widget _statusChip(String status) {

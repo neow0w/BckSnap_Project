@@ -24,6 +24,28 @@ class AuthService {
   AppUser? get currentUser => _user;
   bool get isLoggedIn => _user != null;
 
+  /// Returns the Firebase ID token of the currently authenticated user.
+/// The Cloudflare Worker uses this token to verify the user's identity.
+  Future<String> getFirebaseIdToken({bool forceRefresh = false}) async {
+    final fbUser = _fa.currentUser;
+
+    if (fbUser == null) {
+      throw ApiException(401, 'Please log in again.');
+    }
+
+    try{
+      final token = await fbUser.getIdToken(forceRefresh);
+
+      if (token == null || token.isEmpty) {
+        throw ApiException(401, 'Unable to verify your account.');
+      }
+
+      return token;
+    } on FirebaseAuthException catch (e) {
+      throw _authError(e);
+    }
+  }
+
   /// Runs once when the app starts: restores the saved login, if any.
   Future<void> init() async {
     try {
