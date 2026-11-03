@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
 import '../../services/api_client.dart';
@@ -57,6 +58,53 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
       if (mounted) setState(() => _actionError = e.message);
     } finally {
       if (mounted) setState(() => _workingId = null);
+    }
+  }
+
+    Future<void> _joinMeeting(ClinicAppointment a) async {
+    setState(() {
+      _workingId = a.id;
+      _actionError = null;
+    });
+
+    try {
+      await _service.startInstantMeeting(a.id);
+
+      final credentials = await _service.consultation(a.id);
+
+      if (!mounted) return;
+
+      await context.push(
+        '/consultation/${a.id}',
+        extra: credentials,
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _actionError = e.message);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _actionError = 'Could not start the consultation: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _workingId = null);
+      }
+    }
+  }
+
+  Future<void> _openConsultationChat(ClinicAppointment a) async {
+    debugPrint('CHAT BUTTON CLICKED: ${a.id}');
+
+    try {
+        await GoRouter.of(context).push(
+            '/consultation-chat/${a.id}',
+        );
+
+        debugPrint('CHAT ROUTE CLOSED');
+    } catch (e, stackTrace) {
+        debugPrint('CHAT NAVIGATION ERROR: $e');
+        debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -203,8 +251,7 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
                   const DataColumn(label: Text('Date and time')),
                   const DataColumn(label: Text('Type')),
                   const DataColumn(label: Text('Status')),
-                  if (widget.isReception)
-                    const DataColumn(label: Text('Actions')),
+                  const DataColumn(label: Text('Actions')),
                 ],
                 rows: [
                   for (final a in rows)
@@ -218,7 +265,11 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
                           Text(a.mode == 'online' ? 'Online' : 'In person'),
                         ),
                         DataCell(_statusChip(a.status)),
-                        if (widget.isReception) DataCell(_actions(a)),
+                        DataCell(
+                          widget.isReception
+                            ? _actions(a)
+                            : _doctorActions(a),
+                        ),
                       ],
                     ),
                 ],
@@ -251,6 +302,43 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
           tooltip: 'Reject',
           onPressed: () => _review(a, false),
           icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+        ),
+      ],
+    );
+  }
+  Widget _doctorActions(ClinicAppointment a) {
+    if (_workingId == a.id) {
+      return const SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+
+    if (a.status != 'approved' ||
+        a.mode != 'online' ||
+        a.isDemo) {
+      return const Text('-');
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Start Instant Meeting',
+          onPressed: () => _joinMeeting(a),
+          icon: const Icon(
+            Icons.video_call,
+            color: Colors.blue,
+          ),
+        ),
+        IconButton(
+          tooltip: 'Open Consultation Chat',
+          onPressed: () => _openConsultationChat(a),
+          icon: const Icon(
+            Icons.chat,
+            color: Colors.green,
+          ),
         ),
       ],
     );

@@ -21,40 +21,82 @@ const FIREBASE_JWKS = createRemoteJWKSet(
 const APPOINTMENT_PREFIX = "bcksnap_appointment_";
 const JOIN_WINDOW_MINUTES = 15;
 
+
+function getCorsHeaders(origin: string | null) {
+  const allowedOrigin =
+    origin && /^http:\/\/localhost:\d+$/.test(origin)
+      ? origin
+      : "";
+
+  return {
+    ...(allowedOrigin
+      ? { "Access-Control-Allow-Origin": allowedOrigin }
+      : {}),
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
+  };
+}
+
 export default {
   async fetch(
     request: Request,
     env: Env
   ): Promise<Response> {
     const url = new URL(request.url);
+    const corsHeaders = getCorsHeaders(request.headers.get("Origin"));
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders,
+      });
+    }
+
+    let response: Response;
 
     if (
       request.method === "POST" &&
       url.pathname === "/api/consultation/token"
     ) {
-      return handleConsultationToken(request, env);
-    }
-
-	if (
+      response = await handleConsultationToken(request, env);
+    } else if (
       request.method === "POST" &&
       url.pathname === "/api/consultation/end"
     ) {
-      return handleConsultationEnd(request, env);
+      response = await handleConsultationEnd(request, env);
+    } else if (
+      request.method === "POST" &&
+      url.pathname === "/api/consultation/start-instant"
+    ) {
+      response = await handleInstantMeetingStart(request, env);
+    } else if (
+      request.method === "POST" &&
+      url.pathname === "/api/livekit/webhook"
+    ) {
+      response = await handleLiveKitWebhook(request, env);
+    } else {
+      response = Response.json(
+        { error: "Not found" },
+        { status: 404 }
+      );
     }
 
-	if (
-		request.method === "POST" &&
-		url.pathname === "/api/livekit/webhook"
-	) {
-		return handleLiveKitWebhook(request, env);
-	}
+    const headers = new Headers(response.headers);
 
-    return Response.json(
-      { error: "Not found" },
-      { status: 404 }
-    );
+    for (const [key, value] of Object.entries(corsHeaders)) {
+      headers.set(key, value);
+    }
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
   },
 } satisfies ExportedHandler<Env>;
+
 
 async function handleConsultationToken(
   request: Request,
@@ -150,16 +192,11 @@ async function handleConsultationToken(
     }
 
     const scheduledTime = new Date(scheduledAt).getTime();
-    const earliestJoinTime =
-      scheduledTime - JOIN_WINDOW_MINUTES * 60 * 1000;
 
-    if (
-      !Number.isFinite(scheduledTime) ||
-      Date.now() < earliestJoinTime
-    ) {
+    if (!Number.isFinite(scheduledTime)) {
       return Response.json(
-        { error: "The consultation room is not open yet." },
-        { status: 403 }
+        { error: "Invalid appointment schedule." },
+        { status: 400 }
       );
     }
 
@@ -248,7 +285,8 @@ async function handleConsultationToken(
 	}
     // Generate the room name on the server.
     const roomStatus = await roomStatusResponse.json() as {
-		roomClosed: boolean;
+		  roomClosed: boolean;
+      instantMeetingEnabled: boolean;
 	};
 
 	if (roomStatus.roomClosed) {
@@ -257,27 +295,24 @@ async function handleConsultationToken(
 			{ status: 403 }
 		);
 	}
-	
-	const roomSetupResponse = await roomState.fetch(
-		"https://room-state.internal/ensure-room",
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				roomName,
-			}),
-		}
-	);
+  if (!roomStatus.instantMeetingEnabled) {
+    return Response.json(
+      { error: "The doctor has not started the consultation yet." },
+      { status: 403 }
+    );
+  }
 
-	if (!roomSetupResponse.ok) {
-		const errorData = await roomSetupResponse.json() as { error?: string };
-		return Response.json(
-			{ error: errorData.error ?? "Unable to prepare the consultation room." },
-			{ status: roomSetupResponse.status }
-		);
-	}
+  if (
+    typeof env.LIVEKIT_URL !== "string" ||
+    !env.LIVEKIT_URL.startsWith("wss://")
+  ) {
+    console.error("LiveKit URL configuration is missing or invalid.");
+
+    return Response.json(
+        { error: "LiveKit server configuration is invalid." },
+        { status: 500 }
+    );
+  }
 
     // Generate a short-lived token for this participant.
     const accessToken = new AccessToken(
@@ -314,6 +349,213 @@ async function handleConsultationToken(
     );
   }
 }
+
+async function handleInstantMeetingStart(
+    request: Request,
+    env: Env
+): Promise<Response> {
+    try {
+        // 1. Verify Firebase authentication.
+        const authorization = request.headers.get("Authorization");
+
+        if (!authorization?.startsWith("Bearer ")) {
+            return Response.json(
+                { error: "Authentication required." },
+                { status: 401 }
+            );
+        }
+
+        const firebaseToken = authorization.substring(7);
+
+        const { payload } = await jwtVerify(
+            firebaseToken,
+            FIREBASE_JWKS,
+            {
+                issuer: `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`,
+                audience: FIREBASE_PROJECT_ID,
+                algorithms: ["RS256"],
+            }
+        );
+
+        const uid = payload.sub;
+
+        if (!uid) {
+            return Response.json(
+                { error: "Invalid user identity." },
+                { status: 401 }
+            );
+        }
+
+        // 2. Validate the appointment ID.
+        const body = await request.json() as {
+            appointmentId?: string;
+        };
+
+        const appointmentId = body.appointmentId;
+
+        if (
+            typeof appointmentId !== "string" ||
+            !/^[A-Za-z0-9_-]{1,128}$/.test(appointmentId)
+        ) {
+            return Response.json(
+                { error: "Invalid appointment ID." },
+                { status: 400 }
+            );
+        }
+
+        // 3. Retrieve the appointment.
+        const appointment = await getFirestoreDocument(
+            `appointments/${appointmentId}`,
+            firebaseToken
+        );
+
+        if (!appointment) {
+            return Response.json(
+                { error: "Appointment not found." },
+                { status: 404 }
+            );
+        }
+
+        const fields = appointment.fields ?? {};
+
+        const doctorId = fields.doctorId?.stringValue;
+        const status = fields.status?.stringValue;
+        const mode = fields.mode?.stringValue;
+        const isDemo = fields.isDemo?.booleanValue ?? false;
+
+        if (
+            status !== "approved" ||
+            mode !== "online" ||
+            isDemo
+        ) {
+            return Response.json(
+                { error: "This appointment is not eligible for an instant meeting." },
+                { status: 403 }
+            );
+        }
+
+        // 4. Verify the assigned doctor.
+        if (!doctorId) {
+            return Response.json(
+                { error: "Assigned doctor is unavailable." },
+                { status: 403 }
+            );
+        }
+
+        const doctor = await getFirestoreDocument(
+            `doctors/${doctorId}`,
+            firebaseToken
+        );
+
+        const doctorFields = doctor?.fields ?? {};
+
+        if (
+            doctorFields.userId?.stringValue !== uid ||
+            doctorFields.active?.booleanValue !== true ||
+            doctorFields.supportsOnline?.booleanValue !== true
+        ) {
+            return Response.json(
+                { error: "Only the assigned doctor can start this instant meeting." },
+                { status: 403 }
+            );
+        }
+
+        // 5. Verify the doctor's user account.
+        const user = await getFirestoreDocument(
+            `users/${uid}`,
+            firebaseToken
+        );
+
+        if (
+            user?.fields?.role?.stringValue !== "doctor" ||
+            user?.fields?.status?.stringValue !== "active"
+        ) {
+            return Response.json(
+                { error: "Doctor account is not active." },
+                { status: 403 }
+            );
+        }
+
+        // 6. Prepare the appointment's consultation room.
+        const roomName = `${APPOINTMENT_PREFIX}${appointmentId}`;
+
+        const durableObjectId =
+            env.ROOM_STATE.idFromName(appointmentId);
+
+        const roomState = env.ROOM_STATE.get(durableObjectId);
+
+        const roomSetupResponse = await roomState.fetch(
+            "https://room-state.internal/ensure-room",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    roomName,
+                }),
+            }
+        );
+
+        if (!roomSetupResponse.ok) {
+            const errorData = await roomSetupResponse.json() as {
+                error?: string;
+            };
+
+            return Response.json(
+                {
+                    error: errorData.error ??
+                        "Unable to prepare the consultation room.",
+                },
+                { status: roomSetupResponse.status }
+            );
+        }
+
+        // 7. Enable instant meeting access.
+        const instantResponse = await roomState.fetch(
+            "https://room-state.internal/enable-instant",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    roomName,
+                }),
+            }
+        );
+
+        if (!instantResponse.ok) {
+            const errorData = await instantResponse.json() as {
+                error?: string;
+            };
+
+            return Response.json(
+                {
+                    error: errorData.error ??
+                        "Unable to activate instant meeting.",
+                },
+                { status: instantResponse.status }
+            );
+        }
+
+        return Response.json({
+            success: true,
+            message: "Instant meeting started successfully.",
+            appointmentId,
+            roomName,
+        });
+
+    } catch (error) {
+        console.error("Instant meeting start error:", error);
+
+        return Response.json(
+            { error: "Unable to start the instant meeting." },
+            { status: 500 }
+        );
+    }
+}
+
 async function handleConsultationEnd(
   request: Request,
   env: Env

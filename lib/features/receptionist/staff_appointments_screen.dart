@@ -61,6 +61,44 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
     }
   }
 
+  Future<void> _joinMeeting(ClinicAppointment appointment) async {
+    setState(() {
+        _workingId = appointment.id;
+        _error = null;
+    });
+
+    try {
+        await _service.startInstantMeeting(appointment.id);
+
+        final credentials = await _service.consultation(appointment.id);
+
+        if (!mounted) return;
+
+        await context.push(
+            '/consultation/${appointment.id}',
+            extra: credentials,
+        );
+    } on ApiException catch (error) {
+        if (mounted) {
+            setState(() => _error = error.message);
+        }
+    } finally {
+        if (mounted) {
+            setState(() => _workingId = null);
+        }
+    }
+  }
+
+  Future<void> _openConsultationChat(
+    ClinicAppointment appointment,
+  ) async {
+    if (widget.isReception) return;
+
+    await context.push(
+        '/consultation-chat/${appointment.id}',
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -131,6 +169,7 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
 
   Widget _card(BuildContext context, ClinicAppointment appointment) {
     final working = _workingId == appointment.id;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -172,6 +211,22 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                   ),
                 ] else
                   Chip(label: Text(appointmentStatusLabel(appointment.status))),
+                  if (!widget.isReception &&
+                    appointment.status == 'approved' &&
+                    appointment.mode == 'online') ...[
+                    FilledButton.icon(
+                      onPressed: working
+                        ? null
+                        : () => _joinMeeting(appointment),
+                      icon: const Icon(Icons.video_call),
+                      label: const Text('Start Instant Meeting'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _openConsultationChat(appointment),
+                      icon: const Icon(Icons.chat),
+                      label: const Text('Chat'),
+                    ),
+                  ],
                 if (working)
                   const SizedBox(
                     width: 20,

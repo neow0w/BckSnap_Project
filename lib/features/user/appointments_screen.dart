@@ -317,6 +317,11 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     }
   }
 
+  Future<void> _openConsultationChat() async {
+    await context.push(
+        '/consultation-chat/${widget.appointmentId}',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -417,6 +422,12 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
                         onPressed: _actionLoading ? null : _joinConsultation,
                         icon: const Icon(Icons.video_call_outlined),
                         label: const Text('Join consultation'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _openConsultationChat,
+                        icon: const Icon(Icons.chat_outlined),
+                        label: const Text('Open consultation chat'),
                       ),
                     ],
                     if (appointment.canCancel) ...[

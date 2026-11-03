@@ -9,6 +9,7 @@ import 'api_client.dart';
 import 'auth_service.dart';
 import 'audit_log.dart';
 import '../config/backend_config.dart';
+import '../models/consultation_message.dart';
 
 class GeoPoint {
   const GeoPoint({
@@ -869,6 +870,61 @@ class ClinicService {
       );
     }
   }
+  
+  Future<void> startInstantMeeting(String appointmentId) async {
+    try {
+      final idToken = await _auth.getFirebaseIdToken();
+
+      final response = await http
+          .post(
+            Uri.parse(
+              '${BackendConfig.baseUrl}/api/consultation/start-instant',
+            ),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $idToken',
+            },
+            body: jsonEncode({
+              'appointmentId': appointmentId,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      Map<String, dynamic> data = {};
+
+      try {
+        final decoded = jsonDecode(
+          utf8.decode(response.bodyBytes),
+        );
+
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        // The server did not return valid JSON.
+      }
+
+      if (
+        response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['success'] != true
+      ) {
+        throw ApiException(
+          response.statusCode,
+          (data['error'] as String?) ??
+              (data['message'] as String?) ??
+              'Unable to start the instant meeting.',
+        );
+      }
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(
+        0,
+        'Cannot reach the server. Check your internet connection and try again.',
+      );
+    }
+  }
 
 
   // ---- notifications ------------------------------------------------------
@@ -1042,6 +1098,66 @@ class ClinicService {
         {...d.data(), 'id': d.id, 'createdAt': _dt(d.data()['createdAt'])},
     ];
   });
+    // ---- consultation chat -----------------------------------------------
+  /// Streams messages for a specific approved online appointment.
+  Stream<List<ConsultationMessage>> consultationMessages(
+      String appointmentId,
+  ) {
+    return _db
+        .collection('appointments')
+        .doc(appointmentId)
+        .collection('chatMessages')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs
+              .map((doc) => ConsultationMessage.fromFirestore(doc))
+              .toList();
+        });
+  }
+
+  /// Sends a message as the currently logged-in patient or doctor.
+  Future<void> sendConsultationMessage(
+      String appointmentId,
+      String text,
+  ) async {
+    final user = _me;
+    final message = text.trim();
+
+    if (message.isEmpty) {
+      throw ApiException(422, 'Message cannot be empty.');
+    }
+
+    if (message.length > 4000) {
+      throw ApiException(422, 'Message cannot exceed 4000 characters.');
+    }
+
+    String senderRole;
+
+    if (user.role == 'user') {
+      senderRole = 'patient';
+    } else if (user.role == 'doctor') {
+      senderRole = 'doctor';
+    } else {
+      throw ApiException(
+        403,
+        'Only the patient and assigned doctor can send messages.',
+      );
+    }
+
+    await _guard(() async {
+      await _db
+          .collection('appointments')
+          .doc(appointmentId)
+          .collection('chatMessages')
+          .add({
+            'senderId': user.id,
+            'senderRole': senderRole,
+            'text': message,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+    });
+  }
 }
 
 String appointmentStatusLabel(String status) => switch (status) {

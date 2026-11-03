@@ -57,11 +57,19 @@ export class RoomState extends DurableObject<Env> {
   }
 
   async fetch(request: Request): Promise<Response> {
-    if (request.method ==="GET" && new URL(request.url).pathname === "/status") {
-        const roomClosed = (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
+    if (
+      request.method === "GET" &&
+      new URL(request.url).pathname === "/status"
+    ) {
+        const roomClosed =
+          (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
+
+        const instantMeetingEnabled =
+          (await this.ctx.storage.get<boolean>("instantMeetingEnabled")) ?? false;
 
         return Response.json({
-            roomClosed,
+          roomClosed,
+          instantMeetingEnabled,
         });
     }
 
@@ -118,8 +126,65 @@ export class RoomState extends DurableObject<Env> {
                 created: existingRooms.length === 0,
             });
         });
-    }
+      }
+      
+    if (
+      request.method === "POST" &&
+      new URL(request.url).pathname === "/enable-instant"
+    ) {
+      let data: RoomSetup;
 
+      try {
+        data = await request.json<RoomSetup>();
+      } catch {
+          return Response.json(
+              { error: "Invalid instant meeting request." },
+              { status: 400 }
+          );
+        }
+
+        if (
+          typeof data.roomName !== "string" ||
+          !data.roomName.trim()
+        ) {
+            return Response.json(
+              { error: "Invalid room name." },
+              { status: 400 }
+            );
+        }
+
+        return this.runExclusive(async () => {
+          const roomClosed =
+            (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
+
+            if (roomClosed) {
+              return Response.json(
+                { error: "This consultation room has already been closed." },
+                { status: 410 }
+              );
+            }
+
+          const existingRoomName =
+            await this.ctx.storage.get<string>("roomName");
+
+            if (
+              !existingRoomName ||
+              existingRoomName !== data.roomName
+            ) {
+              return Response.json(
+                { error: "Consultation room not found." },
+                { status: 404 }
+              );
+            }
+
+            await this.ctx.storage.put("instantMeetingEnabled", true);
+
+            return Response.json({
+              success: true,
+              instantMeetingEnabled: true,
+            });
+        });
+    }
 
     if (request.method === "POST" && new URL(request.url).pathname === "/end-room") {
         let data: RoomSetup;

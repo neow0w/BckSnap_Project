@@ -38,6 +38,7 @@ import '../features/admin/audit_log_screen.dart';
 import '../features/screening/person_info_screen.dart';
 import '../features/screening/screening_for_screen.dart';
 import '../features/web/web_doctor_schedule_page.dart';
+import '../features/user/consultation_chat_screen.dart';
 
 /// Where each role lands after login (connectors A, B, C in the SFD).
 String homeFor(String role) {
@@ -174,7 +175,26 @@ final List<RouteBase> _webRoutes = [
         path: '/doctor/schedule',
         builder: (c, s) => const WebDoctorSchedulePage(),
       ),
-    ],
+        ],
+      ),// Consultation routes for the web portal.
+  GoRoute(
+    path: '/consultation-chat/:id',
+    builder: (c, s) {
+      return ConsultationChatScreen(
+        appointmentId: s.pathParameters['id']!,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/consultation/:id',
+    builder: (c, s) {
+      final credentials = s.extra as Map<String, dynamic>;
+
+      return ConsultationScreen(
+        appointmentId: s.pathParameters['id']!,
+        credentials: credentials,
+      );
+    },
   ),
 ];
 
@@ -252,6 +272,15 @@ final List<RouteBase> _mobileRoutes = [
       );
     },
   ),
+  GoRoute(
+    path: '/consultation-chat/:id',
+    builder: (c, s) {
+        return ConsultationChatScreen(
+            appointmentId: s.pathParameters['id']!,
+        );
+    },
+  ),
+
   GoRoute(
     path: '/notifications',
     builder: (c, s) => const NotificationsScreen(),
