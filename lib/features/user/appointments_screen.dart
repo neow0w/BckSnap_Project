@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_client.dart';
 import '../../services/clinic_service.dart';
@@ -43,6 +42,17 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
+      leading: IconButton(
+        tooltip: 'Back',
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/home');
+          }
+        }
+      ),
       title: const Text('My appointments'),
       actions: [
         IconButton(
@@ -279,26 +289,38 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     }
   }
 
+
   Future<void> _joinConsultation() async {
     setState(() {
       _actionLoading = true;
       _error = null;
     });
+
     try {
-      final url = await _service.consultation(widget.appointmentId);
+      final credentials =
+          await _service.consultation(widget.appointmentId);
+
       if (!mounted) return;
-      final opened = await launchUrl(
-        Uri.parse(url),
-        mode: LaunchMode.externalApplication,
+
+      await context.push(
+        '/consultation/${widget.appointmentId}',
+        extra: credentials,
       );
-      if (!opened && mounted) {
-        setState(() => _error = 'Could not open the clinic consultation link.');
-      }
     } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() => _error = error.message);
+      }
     } finally {
-      if (mounted) setState(() => _actionLoading = false);
+      if (mounted) {
+        setState(() => _actionLoading = false);
+      }
     }
+  }
+
+  Future<void> _openConsultationChat() async {
+    await context.push(
+        '/consultation-chat/${widget.appointmentId}',
+    );
   }
 
   @override
@@ -400,6 +422,12 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
                         onPressed: _actionLoading ? null : _joinConsultation,
                         icon: const Icon(Icons.video_call_outlined),
                         label: const Text('Join consultation'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _openConsultationChat,
+                        icon: const Icon(Icons.chat_outlined),
+                        label: const Text('Open consultation chat'),
                       ),
                     ],
                     if (appointment.canCancel) ...[

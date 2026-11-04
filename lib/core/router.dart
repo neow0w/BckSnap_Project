@@ -27,6 +27,7 @@ import '../features/screening/screening_steps_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/user/appointment_booking_screen.dart';
 import '../features/user/appointments_screen.dart';
+import '../features/user/consultation_screen.dart';
 import '../features/user/clinic_details_screen.dart';
 import '../features/user/clinic_discovery_screen.dart';
 import '../features/user/home_screen.dart';
@@ -41,6 +42,14 @@ import '../features/web/web_patients_page.dart';
 import '../services/auth_service.dart';
 import 'home_for.dart';
 import 'screen_placeholder.dart';
+import '../features/screening/screening_result.dart';
+import '../features/splash/splash_screen.dart';
+import '../features/admin/admin_screen.dart';
+import '../features/admin/audit_log_screen.dart';
+import '../features/screening/person_info_screen.dart';
+import '../features/screening/screening_for_screen.dart';
+import '../features/web/web_doctor_schedule_page.dart';
+import '../features/user/consultation_chat_screen.dart';
 import '../features/user/notifications_screen.dart';
 import '../features/auth/profile_picker_screen.dart';
 import '../features/receptionist/doctor_profiles_screen.dart';
@@ -55,6 +64,7 @@ const _protected = [
   '/messages',
   '/clinics',
   '/appointments',
+  '/consultation',
   '/notifications',
   '/message',
   '/admin',
@@ -83,13 +93,15 @@ bool _roleAllowed(String role, String loc) {
     case 'receptionist':
       return _under(loc, '/reception');
     case 'doctor':
-      return _under(loc, '/doctor');
+      return _under(loc, '/doctor') ||
+          _under(loc, '/consultation');
     default:
       return _under(loc, '/home') ||
           _under(loc, '/referral') ||
           _under(loc, '/messages') ||
           _under(loc, '/clinics') ||
           _under(loc, '/appointments') ||
+          _under(loc, '/consultation') ||
           _under(loc, '/notifications') ||
           _under(loc, '/message') ||
           _under(loc, '/screening') ||
@@ -185,7 +197,30 @@ final List<RouteBase> _webRoutes = [
         path: '/doctor/patients',
         builder: (c, s) => const WebPatientsPage(),
       ),
-    ],
+      GoRoute(
+        path: '/doctor/schedule',
+        builder: (c, s) => const WebDoctorSchedulePage(),
+      ),
+        ],
+      ),// Consultation routes for the web portal.
+  GoRoute(
+    path: '/consultation-chat/:id',
+    builder: (c, s) {
+      return ConsultationChatScreen(
+        appointmentId: s.pathParameters['id']!,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/consultation/:id',
+    builder: (c, s) {
+      final credentials = s.extra as Map<String, dynamic>;
+
+      return ConsultationScreen(
+        appointmentId: s.pathParameters['id']!,
+        credentials: credentials,
+      );
+    },
   ),
 ];
 
@@ -278,6 +313,26 @@ final List<RouteBase> _mobileRoutes = [
     builder: (c, s) =>
         AppointmentDetailsScreen(appointmentId: s.pathParameters['id']!),
   ),
+  GoRoute(
+    path: '/consultation/:id',
+    builder: (c, s) {
+      final credentials = s.extra as Map<String, dynamic>;
+
+      return ConsultationScreen(
+        appointmentId: s.pathParameters['id']!,
+        credentials: credentials,
+      );
+    },
+  ),
+  GoRoute(
+    path: '/consultation-chat/:id',
+    builder: (c, s) {
+        return ConsultationChatScreen(
+            appointmentId: s.pathParameters['id']!,
+        );
+    },
+  ),
+
   GoRoute(
     path: '/notifications',
     builder: (c, s) => const NotificationsScreen(),

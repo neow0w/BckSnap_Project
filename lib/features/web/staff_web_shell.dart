@@ -26,6 +26,7 @@ const _adminDests = [
 const _doctorDests = [
   _Dest('Appointments', Icons.event_note_outlined, '/doctor'),
   _Dest('Patients', Icons.people_outline, '/doctor/patients'),
+  _Dest('My Schedule', Icons.calendar_month_outlined, '/doctor/schedule'),
 ];
 
 /// The website frame for staff: a side menu with the page next to it.
