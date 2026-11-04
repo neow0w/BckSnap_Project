@@ -1,0 +1,211 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../core/profile_crypto.dart';
+import '../models/staff_profile.dart';
+import 'api_client.dart';
+import 'audit_log.dart';
+import 'auth_service.dart';
+
+/// The doctor and receptionist profiles of a clinic.
+/// staffProfiles/{id}: one profile.
+/// doctors/{id}: the public card patients book (same id), created when a
+/// doctor profile becomes active.
+class ProfileService {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AuthService _auth = AuthService();
+
+  dynamic get _me {
+    final u = _auth.currentUser;
+    if (u == null) throw ApiException(401, 'Please log in again.');
+    return u;
+  }
+
+  Future<T> _guard<T>(Future<T> Function() run) async {
+    try {
+      return await run();
+    } on FirebaseException catch (e) {
+      throw apiErrorFrom(e);
+    }
+  }
+
+  void _requireAdmin() {
+    if (_me.role != 'admin') {
+      throw ApiException(403, 'Only the clinic administrator can do that.');
+    }
+  }
+
+  static Map<String, dynamic> _doctorCard(
+    String id,
+    String clinicId,
+    String name,
+    List<String> professions,
+  ) => {
+    'userId': id,
+    'clinicId': clinicId,
+    'name': name,
+    'specializations': professions,
+    'supportsOnline': true,
+    'supportsPhysical': true,
+    'active': true,
+  };
+
+  /// All profiles of the clinic (or only the active ones).
+  Future<List<StaffProfile>> profiles({bool activeOnly = false}) => _guard(
+    () async {
+      final snap = await _db
+          .collection('staffProfiles')
+          .where('clinicId', isEqualTo: _me.clinicId)
+          .get();
+      final list = [
+        for (final d in snap.docs) StaffProfile.fromMap(d.id, d.data()),
+      ];
+      list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return activeOnly ? list.where((p) => p.isActive).toList() : list;
+    },
+  );
+
+  /// Admin: the clinic's shared staff account, or null if not created yet.
+  Future<Map<String, dynamic>?> staffAccount() => _guard(() async {
+    final snap = await _db
+        .collection('users')
+        .where('clinicId', isEqualTo: _me.clinicId)
+        .where('role', isEqualTo: 'clinic_staff')
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final d = snap.docs.first;
+    return {
+      'id': d.id,
+      'email': d.data()['email'],
+      'status': d.data()['status'] ?? 'active',
+    };
+  });
+
+  /// Admin: any role, active at once. Receptionist: doctor profiles only,
+  /// waiting for the administrator's approval.
+  Future<void> createProfile({
+    required String name,
+    required String role,
+    required String password,
+    List<String> professions = const [],
+  }) => _guard(() async {
+    final me = _me;
+    final isAdmin = me.role == 'admin';
+    final isReceptionist = me.role == 'receptionist';
+    if (!isAdmin && !isReceptionist) {
+      throw ApiException(403, 'You cannot create profiles.');
+    }
+    if (isReceptionist && role != 'doctor') {
+      throw ApiException(403, 'Receptionists can only create doctor profiles.');
+    }
+    final clinicId = me.clinicId as String?;
+    if (clinicId == null) {
+      throw ApiException(403, 'No clinic is assigned to this account.');
+    }
+    final cleanName = name.trim();
+    final status = isAdmin ? 'active' : 'pending';
+    final salt = ProfileCrypto.newSalt();
+    final ref = _db.collection('staffProfiles').doc();
+    final batch = _db.batch();
+    batch.set(ref, {
+      'clinicId': clinicId,
+      'name': cleanName,
+      'role': role,
+      'status': status,
+      'professions': role == 'doctor' ? professions : <String>[],
+      'passwordSalt': salt,
+      'passwordHash': ProfileCrypto.hash(salt, password),
+      'createdByName': me.displayName,
+      'createdByRole': me.role,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    if (status == 'active' && role == 'doctor') {
+      batch.set(
+        _db.collection('doctors').doc(ref.id),
+        _doctorCard(ref.id, clinicId, cleanName, professions),
+      );
+    }
+    AuditLog.addTo(
+      batch,
+      action: 'profile.created',
+      targetType: 'profile',
+      targetId: ref.id,
+      targetName: cleanName,
+      details: '$role${status == 'pending' ? ', waiting for approval' : ''}',
+    );
+    await batch.commit();
+  });
+
+  /// Admin: approve or reject a profile that is waiting.
+  Future<void> review(StaffProfile p, {required bool approve}) =>
+      _guard(() async {
+        _requireAdmin();
+        final batch = _db.batch();
+        batch.update(_db.collection('staffProfiles').doc(p.id), {
+          'status': approve ? 'active' : 'rejected',
+          'reviewedBy': _me.id,
+          'reviewedAt': FieldValue.serverTimestamp(),
+        });
+        if (approve && p.isDoctor) {
+          batch.set(
+            _db.collection('doctors').doc(p.id),
+            _doctorCard(p.id, p.clinicId, p.name, p.professions),
+          );
+        }
+        AuditLog.addTo(
+          batch,
+          action: approve ? 'profile.approved' : 'profile.rejected',
+          targetType: 'profile',
+          targetId: p.id,
+          targetName: p.name,
+          details: p.role,
+        );
+        await batch.commit();
+      });
+
+  /// Admin: activate or deactivate a profile.
+  Future<void> setActive(StaffProfile p, bool active) => _guard(() async {
+    _requireAdmin();
+    final batch = _db.batch();
+    batch.update(_db.collection('staffProfiles').doc(p.id), {
+      'status': active ? 'active' : 'inactive',
+    });
+    // A doctor is only bookable by patients while active.
+    if (p.isDoctor) {
+      batch.set(_db.collection('doctors').doc(p.id), {
+        ..._doctorCard(p.id, p.clinicId, p.name, p.professions),
+        'active': active,
+      }, SetOptions(merge: true));
+    }
+    AuditLog.addTo(
+      batch,
+      action: active ? 'profile.activated' : 'profile.deactivated',
+      targetType: 'profile',
+      targetId: p.id,
+      targetName: p.name,
+      details: p.role,
+    );
+    await batch.commit();
+  });
+
+  /// Admin: set a new password for a profile.
+  Future<void> resetPassword(StaffProfile p, String newPassword) =>
+      _guard(() async {
+        _requireAdmin();
+        final salt = ProfileCrypto.newSalt();
+        final batch = _db.batch();
+        batch.update(_db.collection('staffProfiles').doc(p.id), {
+          'passwordSalt': salt,
+          'passwordHash': ProfileCrypto.hash(salt, newPassword),
+        });
+        AuditLog.addTo(
+          batch,
+          action: 'profile.password_reset',
+          targetType: 'profile',
+          targetId: p.id,
+          targetName: p.name,
+          details: p.role,
+        );
+        await batch.commit();
+      });
+}

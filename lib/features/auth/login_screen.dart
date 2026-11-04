@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/widgets.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
+import '../../core/home_for.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -49,15 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      if (role == 'receptionist') {
-        context.go('/reception');
-      } else if (role == 'doctor') {
-        context.go('/doctor');
-      } else if (role == 'admin') {
-        context.go('/admin');
-      } else {
-        context.go('/home');
-      }
+      context.go(homeFor(role));
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {

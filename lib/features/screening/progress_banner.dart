@@ -138,7 +138,7 @@ class _ProgressBannerState extends State<ProgressBanner> {
               children: [
                 if (primary != null)
                   FilledButton(
-                    onPressed: () => context.push('/screening/photo'),
+                    onPressed: () => context.push('/screening/for'),
                     child: Text(primary),
                   ),
                 if (_summary != null && !_summary!.isEmpty)

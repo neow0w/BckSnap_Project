@@ -7,7 +7,8 @@ import '../../services/clinic_service.dart';
 
 /// Admin only: who did what, and when (the latest 300 entries).
 class AuditLogScreen extends StatefulWidget {
-  const AuditLogScreen({super.key});
+  final bool embedded;
+  const AuditLogScreen({super.key, this.embedded = false});
 
   @override
   State<AuditLogScreen> createState() => _AuditLogScreenState();
@@ -69,7 +70,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   bool _inFilter(Map<String, dynamic> e) {
     final a = '${e['action'] ?? ''}';
     return switch (_filter) {
-      'staff' => a.startsWith('staff.'),
+      'staff' => a.startsWith('staff.') || a.startsWith('profile.'),
       'appointment' => a.startsWith('appointment.'),
       'access' => a == 'login' || a.startsWith('screening.'),
       'clinic' => a.startsWith('clinic.'),
@@ -102,13 +103,23 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       'appointment.rejected' => '$who rejected appointment $target',
       'screening.viewed' => '$who viewed the screenings of $patient',
       'screening.photo_viewed' => '$who viewed a back photo of a patient',
+      'staff.account_created' =>
+        '$who created the clinic staff account $target',
+      'profile.created' => '$who created the $details profile of $target',
+      'profile.approved' => '$who approved the profile of $target',
+      'profile.rejected' => '$who rejected the profile of $target',
+      'profile.activated' => '$who activated the profile of $target',
+      'profile.deactivated' => '$who deactivated the profile of $target',
+      'profile.password_reset' => '$who reset the password of $target',
       final other => '$who: $other',
     };
   }
 
   IconData _icon(String action) {
     if (action == 'login') return Icons.login;
-    if (action.startsWith('staff.')) return Icons.badge_outlined;
+    if (action.startsWith('staff.') || action.startsWith('profile.')) {
+      return Icons.badge_outlined;
+    }
     if (action.startsWith('appointment.')) return Icons.event_note_outlined;
     if (action.startsWith('screening.')) return Icons.visibility_outlined;
     if (action.startsWith('clinic.')) return Icons.place_outlined;
@@ -127,20 +138,22 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
     }).toList();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Audit log'),
-        leading: BackButton(
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/admin'),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Audit log'),
+              leading: BackButton(
+                onPressed: () =>
+                    context.canPop() ? context.pop() : context.go('/admin'),
+              ),
+              actions: [
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _loading ? null : _load,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -185,6 +198,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                     ],
                   ),
                 Expanded(
+                  key: const ValueKey('body'),
                   child: rows.isEmpty && !_loading
                       ? const Center(child: Text('No entries to show.'))
                       : ListView.separated(

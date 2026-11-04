@@ -964,7 +964,9 @@ class ClinicService {
         Query<Map<String, dynamic>> q = _db
             .collection('appointments')
             .where('clinicId', isEqualTo: me.clinicId);
-        if (me.role == 'doctor') q = q.where('doctorId', isEqualTo: me.id);
+        if (me.role == 'doctor') {
+          q = q.where('doctorId', isEqualTo: me.profileId ?? me.id);
+        }
         final snap = await q.get();
         final list = [for (final d in snap.docs) _appt(d.id, d.data())]
             .where((a) => _inState(a, state))
@@ -1022,7 +1024,9 @@ class ClinicService {
     Query<Map<String, dynamic>> q = _db
         .collection('appointments')
         .where('clinicId', isEqualTo: me.clinicId);
-    if (me.role == 'doctor') q = q.where('doctorId', isEqualTo: me.id);
+    if (me.role == 'doctor') {
+      q = q.where('doctorId', isEqualTo: me.profileId ?? me.id);
+    }
     return q.snapshots().map((snap) {
       final list = [for (final d in snap.docs) _appt(d.id, d.data())];
       list.sort(

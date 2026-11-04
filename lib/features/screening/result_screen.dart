@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/theme.dart';
 import 'posture_analysis.dart';
 import 'screening_result.dart';
 
@@ -8,17 +11,56 @@ class ResultScreen extends StatelessWidget {
   final ResultData data;
   const ResultScreen({super.key, required this.data});
 
-  // "Did the user use the app as a guest?"
-  // YES -> Sign up, NO -> User Home (connector A)
-  // Everyone is logged in now: go to the user home (connector A).
-  void _goToReferral(BuildContext context) => context.go('/home');
-
   String _deg(double v) => '${v.toStringAsFixed(1)}°';
+
+  ({Color color, String label, String message, String next}) get _style {
+    switch (data.category) {
+      case ResultCategory.refer:
+        return (
+          color: AppColors.high,
+          label: 'HIGH RISK',
+          message:
+              'The highest trunk rotation was ${_deg(data.highestAtr)}'
+              '${data.highestLevel == null ? '' : ' at the ${data.highestLevel!.toLowerCase()} level'}. '
+              'A reading of ${ResultRules.referAtr.toStringAsFixed(0)}° or '
+              'more is the usual reason to be checked by a clinician.',
+          next:
+              'Book a clinic appointment so a clinician can review these '
+              'findings. They may confirm it with an X-ray.',
+        );
+      case ResultCategory.borderline:
+        return (
+          color: AppColors.mild,
+          label: 'MILD RISK',
+          message: data.borderlineFromPhotoOnly
+              ? 'The trunk rotation was low (${_deg(data.highestAtr)}), but '
+                    'the photo showed a noticeable shoulder or hip tilt.'
+              : 'The highest trunk rotation was ${_deg(data.highestAtr)}, '
+                    'between ${ResultRules.borderlineAtr.toStringAsFixed(0)}° '
+                    'and ${ResultRules.referAtr.toStringAsFixed(0)}°.',
+          next:
+              'Repeat the screening in a few weeks. Ask a clinician if the '
+              'result stays the same or you have concerns.',
+        );
+      case ResultCategory.noSign:
+        return (
+          color: AppColors.normal,
+          label: 'NORMAL',
+          message:
+              'The highest trunk rotation was ${_deg(data.highestAtr)}, '
+              'below ${ResultRules.borderlineAtr.toStringAsFixed(0)}°. No '
+              'immediate concern was found.',
+          next:
+              'Repeat the screening every month. If you notice uneven '
+              'shoulders, a prominent shoulder blade or back pain, ask a '
+              'clinician.',
+        );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final category = data.category;
-
+    final s = _style;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Screening Result'),
@@ -27,41 +69,128 @@ class ResultScreen extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
+            constraints: const BoxConstraints(maxWidth: 420),
             child: Column(
               children: [
                 Expanded(
                   child: ListView(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
                     children: [
-                      if (data.subjectLabel != null) ...[
-                        Card(
-                          child: ListTile(
-                            leading: const Icon(Icons.person_outline),
-                            title: const Text('Screened person'),
-                            subtitle: Text(data.subjectLabel!),
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.tonal,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            data.posture != null
+                                ? 'POSE ESTIMATION + SCOLIOMETER'
+                                : 'DIGITAL SCOLIOMETER',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                      ),
+                      if (data.subjectLabel != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Screened person: ${data.subjectLabel}',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ],
-                      _headline(category),
-                      const SizedBox(height: 12),
-                      _atrCard(),
-                      const SizedBox(height: 12),
-                      _postureCard(),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
+                      Center(
+                        child: SizedBox(
+                          width: 220,
+                          height: 125,
+                          child: CustomPaint(
+                            painter: _GaugePainter(data.highestAtr, s.color),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        s.label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: s.color,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        s.message,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 16),
                       const Text(
+                        'TRUNK ROTATION FINDINGS',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _findings(context),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Recommended next step',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        s.next,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
                         'This is a screening result, not a medical diagnosis. '
                         'Only a doctor can confirm scoliosis.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontStyle: FontStyle.italic),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontStyle: FontStyle.italic,
+                          fontSize: 11,
+                          color: AppColors.hint,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: _actions(context, category),
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FilledButton(
+                        onPressed: () => context.go('/referral'),
+                        child: const Text('PROCEED TO CLINIC REFERRAL'),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton.tonal(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.tonal,
+                          foregroundColor: AppColors.primary,
+                        ),
+                        onPressed: () => context.go('/home'),
+                        child: const Text('BACK TO HOME'),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -71,238 +200,138 @@ class ResultScreen extends StatelessWidget {
     );
   }
 
-  // ---- headline ---------------------------------------------------------------
+  // ---- findings box -------------------------------------------------------
 
-  Widget _headline(ResultCategory category) {
-    final Color color;
-    final IconData icon;
-    final String title;
-    final String message;
+  String _higher(HigherSide h) =>
+      h == HigherSide.level ? 'level' : '${higherSideLabel(h)} higher';
 
-    switch (category) {
-      case ResultCategory.refer:
-        color = Colors.deepOrange;
-        icon = Icons.warning_amber_rounded;
-        title = 'Possible scoliosis: referral recommended';
-        message =
-            'The highest trunk rotation was ${_deg(data.highestAtr)}'
-            '${data.highestLevel == null ? '' : ' at the ${data.highestLevel!.toLowerCase()} level'}. '
-            'A reading of ${ResultRules.referAtr.toStringAsFixed(0)}° or more '
-            'is the usual reason to be checked by a clinician, who may confirm '
-            'it with an X-ray.';
-      case ResultCategory.borderline:
-        color = Colors.amber.shade800;
-        icon = Icons.info_outline;
-        title = 'Borderline result: please check again';
-        message = data.borderlineFromPhotoOnly
-            ? 'The trunk rotation was low (${_deg(data.highestAtr)}), but the '
-                  'photo showed a noticeable shoulder or hip tilt. Repeat the '
-                  'screening, and ask a clinician if it stays the same or you '
-                  'have concerns.'
-            : 'The highest trunk rotation was ${_deg(data.highestAtr)}, between '
-                  '${ResultRules.borderlineAtr.toStringAsFixed(0)}° and '
-                  '${ResultRules.referAtr.toStringAsFixed(0)}°. Repeat the '
-                  'screening, and ask a clinician if it stays the same or you '
-                  'have concerns.';
-      case ResultCategory.noSign:
-        color = Colors.green;
-        icon = Icons.check_circle_outline;
-        title = 'No sign of scoliosis detected';
-        message =
-            'The highest trunk rotation was ${_deg(data.highestAtr)}, below '
-            '${ResultRules.borderlineAtr.toStringAsFixed(0)}°. This screening '
-            'does not rule out scoliosis. If you notice uneven shoulders, a '
-            'prominent shoulder blade, or back pain, ask a clinician.';
-    }
+  String _lean(LeanSide s) =>
+      s == LeanSide.upright ? 'upright' : 'leans ${leanSideLabel(s)}';
 
-    return Card(
-      color: color.withValues(alpha: 0.15),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Icon(icon, size: 56, color: color),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(message, textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ---- trunk rotation (the deciding measurement) -----------------------------
-
-  Widget _atrCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Trunk rotation (scoliometer)',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Highest: ${_deg(data.highestAtr)}',
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            if (data.levels.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              for (final l in data.levels)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    children: [
-                      Icon(
-                        l.name == data.highestLevel
-                            ? Icons.star
-                            : Icons.straighten,
-                        size: 16,
-                        color: l.name == data.highestLevel
-                            ? Colors.amber
-                            : null,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(l.name)),
-                      Text(_deg(l.atr)),
-                    ],
-                  ),
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ---- photo posture (supporting information) --------------------------------
-
-  String _higherText(HigherSide h) => h == HigherSide.level
-      ? 'level'
-      : "higher on the patient's ${higherSideLabel(h)}";
-
-  String _leanText(LeanSide s) => s == LeanSide.upright
-      ? 'upright'
-      : "leaning to the patient's ${leanSideLabel(s)}";
-
-  Widget _postureCard() {
+  Widget _findings(BuildContext context) {
+    final rows = <Widget>[
+      for (final l in data.levels)
+        _row(l.name, _deg(l.atr), bold: l.name == data.highestLevel),
+      _row('Highest rotation (ATR)', _deg(data.highestAtr), bold: true),
+    ];
     final p = data.posture;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Posture from the back photo',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            if (p == null)
-              const Text(
-                'Not used. The photo was not taken with the guided camera, '
-                'or it did not pass the quality check.',
-              )
-            else ...[
-              _postureRow(
-                'Shoulder tilt',
-                _deg(p.shoulderTilt),
-                _higherText(p.higherShoulder),
-                p.shoulderFlag,
-              ),
-              _postureRow(
-                'Hip tilt',
-                _deg(p.hipTilt),
-                _higherText(p.higherHip),
-                p.hipFlag,
-              ),
-              _postureRow(
-                'Trunk lean',
-                _deg(p.trunkLean),
-                _leanText(p.leanSide),
-                false,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                p.flagged
-                    ? 'A noticeable tilt was found '
-                          '(${PostureRules.shoulderTiltFlag.toStringAsFixed(0)}° '
-                          'or more).'
-                    : 'Both tilts are below the '
-                          '${PostureRules.shoulderTiltFlag.toStringAsFixed(0)}° '
-                          'flag level.',
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Posture is supporting information only. It cannot confirm '
-                'or rule out scoliosis, and the side that is higher does not '
-                'show which way a curve bends.',
-                style: TextStyle(fontSize: 12),
-              ),
-            ],
-          ],
+    if (p == null) {
+      rows.add(_row('Posture photo', 'Not used'));
+    } else {
+      rows.addAll([
+        _row(
+          'Shoulder alignment',
+          '${_deg(p.shoulderTilt)} · ${_higher(p.higherShoulder)}',
+          flag: p.shoulderFlag,
         ),
+        _row(
+          'Pelvic alignment',
+          '${_deg(p.hipTilt)} · ${_higher(p.higherHip)}',
+          flag: p.hipFlag,
+        ),
+        _row('Trunk lean', '${_deg(p.trunkLean)} · ${_lean(p.leanSide)}'),
+      ]);
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.fieldFill.withValues(alpha: 0.5),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            rows[i],
+          ],
+        ],
       ),
     );
   }
 
-  Widget _postureRow(String label, String value, String detail, bool flag) {
+  Widget _row(
+    String label,
+    String value, {
+    bool bold = false,
+    bool flag = false,
+  }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
         children: [
-          Icon(
-            flag ? Icons.error_outline : Icons.check_circle_outline,
-            size: 16,
-            color: flag ? Colors.orange : Colors.green,
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
           ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(label)),
-          Text('$value  ($detail)'),
+          if (flag)
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: Icon(Icons.error_outline, size: 14, color: AppColors.mild),
+            ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
-  // ---- buttons (Fig 7: "Does the patient have scoliosis?") ---------------------
+/// Half-circle gauge: green below 5°, amber 5° to 7°, red from 7°.
+class _GaugePainter extends CustomPainter {
+  final double atr;
+  final Color needle;
+  const _GaugePainter(this.atr, this.needle);
 
-  Widget _actions(BuildContext context, ResultCategory category) {
-    if (category == ResultCategory.noSign) {
-      // Scoliosis = NO: "Does the patient still wish to proceed to referral?"
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Do you still wish to proceed to the clinic referral option?',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          FilledButton(
-            onPressed: () => _goToReferral(context),
-            child: const Text('Yes, proceed to referral'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: () => context.go('/'),
-            child: const Text('No, back to start'),
-          ),
-        ],
+  static const double _max = 12;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height - 10);
+    final radius = math.min(size.width / 2, size.height) - 12;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    void arc(double from, double to, Color color) {
+      canvas.drawArc(
+        rect,
+        math.pi + math.pi * (from / _max),
+        math.pi * ((to - from) / _max),
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 16
+          ..color = color,
       );
     }
-    // Scoliosis = YES (or borderline)
-    return FilledButton(
-      onPressed: () => _goToReferral(context),
-      child: const Text('Continue to clinic referral'),
+
+    arc(0, ResultRules.borderlineAtr, AppColors.normal);
+    arc(ResultRules.borderlineAtr, ResultRules.referAtr, AppColors.mild);
+    arc(ResultRules.referAtr, _max, AppColors.high);
+
+    final a = math.pi + math.pi * (math.min(atr, _max) / _max);
+    final tip = center + Offset(math.cos(a), math.sin(a)) * (radius - 22);
+    canvas.drawLine(
+      center,
+      tip,
+      Paint()
+        ..color = needle
+        ..strokeWidth = 4
+        ..strokeCap = StrokeCap.round,
     );
+    canvas.drawCircle(center, 8, Paint()..color = needle);
+    canvas.drawCircle(center, 3, Paint()..color = Colors.white);
   }
+
+  @override
+  bool shouldRepaint(covariant _GaugePainter old) =>
+      old.atr != atr || old.needle != needle;
 }

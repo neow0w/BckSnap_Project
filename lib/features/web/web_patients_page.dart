@@ -163,7 +163,7 @@ class _WebPatientsPageState extends State<WebPatientsPage> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snap.hasError) return Center(child: Text(_errorText(snap.error)));
-        final list = snap.data ?? [];
+        final list = (snap.data ?? []).where((s) => s.forSelf).toList();
         final summary = ProgressSummary(list);
         return ListView(
           padding: const EdgeInsets.all(20),

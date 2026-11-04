@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../features/admin/admin_screen.dart';
+import '../features/admin/audit_log_screen.dart';
 import '../features/auth/edit_profile_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/privacy_notice.dart';
@@ -14,10 +16,15 @@ import '../features/receptionist/inbox_screen.dart';
 import '../features/receptionist/patient_chat_screen.dart';
 import '../features/receptionist/staff_appointments_screen.dart';
 import '../features/screening/camera_capture_screen.dart';
+import '../features/screening/measurement_screen.dart';
+import '../features/screening/person_info_screen.dart';
 import '../features/screening/photo_screen.dart';
 import '../features/screening/progress_screen.dart';
 import '../features/screening/result_screen.dart';
-import '../features/screening/measurement_screen.dart';
+import '../features/screening/screening_for_screen.dart';
+import '../features/screening/screening_result.dart';
+import '../features/screening/screening_steps_screen.dart';
+import '../features/splash/splash_screen.dart';
 import '../features/user/appointment_booking_screen.dart';
 import '../features/user/appointments_screen.dart';
 import '../features/user/consultation_screen.dart';
@@ -25,11 +32,15 @@ import '../features/user/clinic_details_screen.dart';
 import '../features/user/clinic_discovery_screen.dart';
 import '../features/user/home_screen.dart';
 import '../features/user/message_screen.dart';
+import '../features/user/messages_hub_screen.dart';
+import '../features/user/patient_shell.dart';
+import '../features/user/referral_screen.dart';
 import '../features/web/staff_web_shell.dart';
 import '../features/web/web_appointments_page.dart';
 import '../features/web/web_messages_page.dart';
 import '../features/web/web_patients_page.dart';
 import '../services/auth_service.dart';
+import 'home_for.dart';
 import 'screen_placeholder.dart';
 import '../features/screening/screening_result.dart';
 import '../features/splash/splash_screen.dart';
@@ -39,24 +50,18 @@ import '../features/screening/person_info_screen.dart';
 import '../features/screening/screening_for_screen.dart';
 import '../features/web/web_doctor_schedule_page.dart';
 import '../features/user/consultation_chat_screen.dart';
+import '../features/user/notifications_screen.dart';
+import '../features/auth/profile_picker_screen.dart';
+import '../features/receptionist/doctor_profiles_screen.dart';
 
-/// Where each role lands after login (connectors A, B, C in the SFD).
-String homeFor(String role) {
-  switch (role) {
-    case 'admin':
-      return '/admin';
-    case 'receptionist':
-      return '/reception'; // connector B
-    case 'doctor':
-      return '/doctor'; // connector C
-    default:
-      return '/home'; // connector A
-  }
-}
+// Old imports of homeFor from this file keep working.
+export 'home_for.dart' show homeFor;
 
 // Screens that need a logged-in account.
 const _protected = [
   '/home',
+  '/referral',
+  '/messages',
   '/clinics',
   '/appointments',
   '/consultation',
@@ -92,6 +97,8 @@ bool _roleAllowed(String role, String loc) {
           _under(loc, '/consultation');
     default:
       return _under(loc, '/home') ||
+          _under(loc, '/referral') ||
+          _under(loc, '/messages') ||
           _under(loc, '/clinics') ||
           _under(loc, '/appointments') ||
           _under(loc, '/consultation') ||
@@ -108,7 +115,8 @@ final GoRouter appRouter = GoRouter(
   // the current user directly; screens call context.go() after login/logout,
   // which triggers this check.
   redirect: (context, state) {
-    final user = AuthService().currentUser;
+    final auth = AuthService();
+    final user = auth.currentUser;
     final loc = state.matchedLocation;
 
     // The website has no landing page or sign-up: staff log in.
@@ -121,20 +129,26 @@ final GoRouter appRouter = GoRouter(
       return _publicScreens.contains(loc) ? null : '/login';
     }
 
+    // The shared clinic staff account must open a profile first.
+    if (user.role == 'clinic_staff') {
+      return (loc == '/profiles' || loc == '/privacy') ? null : '/profiles';
+    }
+    // Only a staff account can open the profile screen (to switch profile).
+    if (loc == '/profiles') {
+      return auth.isStaffAccount ? null : homeFor(user.role);
+    }
     if (_entryScreens.contains(loc)) return homeFor(user.role);
-
     final isProtected = _protected.any((p) => _under(loc, p));
     if (isProtected && !_roleAllowed(user.role, loc)) {
       return homeFor(user.role);
     }
     return null;
   },
-
   routes: kIsWeb ? _webRoutes : _mobileRoutes,
   errorBuilder: (context, state) => const _GoHome(),
 );
 
-// ---- the website (receptionist and doctor only) --------------------------------
+// ---- the website (receptionist, doctor and admin) -------------------------
 
 final List<RouteBase> _webRoutes = [
   GoRoute(path: '/splash', builder: (c, s) => const SplashScreen()),
@@ -145,6 +159,7 @@ final List<RouteBase> _webRoutes = [
   GoRoute(path: '/privacy', builder: (c, s) => const PrivacyNoticeScreen()),
   GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
   GoRoute(path: '/profile/edit', builder: (c, s) => const EditProfileScreen()),
+  GoRoute(path: '/profiles', builder: (c, s) => const ProfilePickerScreen()),
   ShellRoute(
     builder: (context, state, child) =>
         StaffWebShell(location: state.matchedLocation, child: child),
@@ -157,11 +172,22 @@ final List<RouteBase> _webRoutes = [
         path: '/reception/inbox',
         builder: (c, s) => const WebMessagesPage(),
       ),
-      GoRoute(path: '/admin', builder: (c, s) => const AdminScreen()),
-      GoRoute(path: '/admin/audit', builder: (c, s) => const AuditLogScreen()),
+      GoRoute(
+        path: '/reception/staff',
+        builder: (c, s) => const DoctorProfilesScreen(embedded: true),
+      ),
+      // "embedded": the website shell already has the header and menu.
+      GoRoute(
+        path: '/admin',
+        builder: (c, s) => const AdminScreen(embedded: true),
+      ),
+      GoRoute(
+        path: '/admin/audit',
+        builder: (c, s) => const AuditLogScreen(embedded: true),
+      ),
       GoRoute(
         path: '/admin/clinic-location',
-        builder: (c, s) => const ClinicLocationScreen(),
+        builder: (c, s) => const ClinicLocationScreen(embedded: true),
       ),
       GoRoute(
         path: '/doctor',
@@ -198,10 +224,11 @@ final List<RouteBase> _webRoutes = [
   ),
 ];
 
-// ---- the phone app ------------------------------------------------------------
+// ---- the phone app ---------------------------------------------------------
 
 final List<RouteBase> _mobileRoutes = [
-  // Figure 7: landing, login, sign-up, reset, screening
+  // Splash, welcome, authentication
+  GoRoute(path: '/splash', builder: (c, s) => const SplashScreen()),
   GoRoute(path: '/', builder: (c, s) => const LandingScreen()),
   GoRoute(path: '/login', builder: (c, s) => const LoginScreen()),
   GoRoute(path: '/reset', builder: (c, s) => const ResetPasswordScreen()),
@@ -210,6 +237,8 @@ final List<RouteBase> _mobileRoutes = [
     builder: (c, s) => SignUpScreen(next: s.uri.queryParameters['next']),
   ),
   GoRoute(path: '/privacy', builder: (c, s) => const PrivacyNoticeScreen()),
+
+  // Screening: who for -> (person info) -> hub -> steps -> capture -> result
   GoRoute(
     path: '/screening/for',
     builder: (c, s) => const ScreeningForScreen(),
@@ -217,6 +246,15 @@ final List<RouteBase> _mobileRoutes = [
   GoRoute(
     path: '/screening/person',
     builder: (c, s) => const PersonInfoScreen(),
+  ),
+  GoRoute(
+    path: '/screening/guide',
+    builder: (c, s) => const ScreeningStepsScreen(method: 'pose'),
+  ),
+  GoRoute(
+    path: '/screening/steps/:method',
+    builder: (c, s) =>
+        ScreeningStepsScreen(method: s.pathParameters['method']!),
   ),
   GoRoute(
     path: '/screening/photo',
@@ -238,13 +276,27 @@ final List<RouteBase> _mobileRoutes = [
     },
   ),
   GoRoute(path: '/progress', builder: (c, s) => const ProgressScreen()),
-
-  // Profile (all roles)
-  GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
   GoRoute(path: '/profile/edit', builder: (c, s) => const EditProfileScreen()),
+  GoRoute(path: '/profiles', builder: (c, s) => const ProfilePickerScreen()),
+  GoRoute(
+    path: '/reception/doctors',
+    builder: (c, s) => const DoctorProfilesScreen(),
+  ),
+
+  // Bottom-bar tabs: Home, Referral, Messages, Profile (the centre button
+  // opens the screening). The shell only draws the bar for patients.
+  ShellRoute(
+    builder: (context, state, child) =>
+        PatientShell(location: state.matchedLocation, child: child),
+    routes: [
+      GoRoute(path: '/home', builder: (c, s) => const HomeScreen()),
+      GoRoute(path: '/referral', builder: (c, s) => const ReferralScreen()),
+      GoRoute(path: '/messages', builder: (c, s) => const MessagesHubScreen()),
+      GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
+    ],
+  ),
 
   // Figure 8: user side (connector A)
-  GoRoute(path: '/home', builder: (c, s) => const HomeScreen()),
   GoRoute(path: '/clinics', builder: (c, s) => const ClinicDiscoveryScreen()),
   GoRoute(
     path: '/clinics/:id',
@@ -296,12 +348,6 @@ final List<RouteBase> _mobileRoutes = [
     builder: (c, s) => const StaffAppointmentsScreen(isReception: true),
   ),
   GoRoute(path: '/reception/inbox', builder: (c, s) => const InboxScreen()),
-  GoRoute(path: '/admin', builder: (c, s) => const AdminScreen()),
-  GoRoute(path: '/admin/audit', builder: (c, s) => const AuditLogScreen()),
-  GoRoute(
-    path: '/admin/clinic-location',
-    builder: (c, s) => const ClinicLocationScreen(),
-  ),
   GoRoute(
     path: '/reception/chat/:patientId',
     builder: (c, s) {
@@ -315,6 +361,14 @@ final List<RouteBase> _mobileRoutes = [
         patientName: s.extra is String ? s.extra as String : null,
       );
     },
+  ),
+
+  // Admin
+  GoRoute(path: '/admin', builder: (c, s) => const AdminScreen()),
+  GoRoute(path: '/admin/audit', builder: (c, s) => const AuditLogScreen()),
+  GoRoute(
+    path: '/admin/clinic-location',
+    builder: (c, s) => const ClinicLocationScreen(),
   ),
 
   // Figure 10: doctor (connector C)

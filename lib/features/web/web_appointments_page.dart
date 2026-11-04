@@ -174,8 +174,11 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
                 final rows = all.where((a) {
                   if (!_matches(a, _filter)) return false;
                   if (q.isEmpty) return true;
-                  final hay = '${a.patientName} ${a.reference} ${a.doctorName}'
-                      .toLowerCase();
+                  final hay = [
+                    a.patientName,
+                    a.reference,
+                    a.doctorName,
+                  ].whereType<String>().join(' ').toLowerCase();
                   return hay.contains(q);
                 }).toList();
 

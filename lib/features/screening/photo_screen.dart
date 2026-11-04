@@ -19,24 +19,35 @@ class _PhotoScreenState extends State<PhotoScreen> {
   String? _photoName;
 
   Future<void> _pick(ImageSource source) async {
-    final XFile? picked = await _picker.pickImage(
-      source: source,
-      imageQuality: 85,
-      maxWidth: 1600, // keeps the upload small
-    );
-    if (picked == null) return;
-    final bytes = await picked.readAsBytes();
-    if (!mounted) return;
-    setState(() {
-      _photoBytes = bytes;
-      _photoName = picked.name;
-    });
+    try {
+      final XFile? picked = await _picker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1600, // keeps the upload small
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _photoBytes = bytes;
+        _photoName = picked.name;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not open the photo. Check the camera permission.',
+          ),
+        ),
+      );
+    }
   }
 
   void _continue() {
     ScreeningDraft.photoBytes = _photoBytes;
     ScreeningDraft.photoName = _photoName;
-    context.go('/screening/test');
+    context.go('/screening/steps/scoliometer');
   }
 
   @override
@@ -44,7 +55,9 @@ class _PhotoScreenState extends State<PhotoScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Take Back Photo'),
-        leading: BackButton(onPressed: () => context.go('/home')),
+        leading: BackButton(
+          onPressed: () => context.go('/screening/steps/pose'),
+        ),
       ),
       body: SafeArea(
         child: Padding(

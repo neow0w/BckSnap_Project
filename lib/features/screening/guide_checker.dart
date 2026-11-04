@@ -169,13 +169,6 @@ class GuideChecker {
       leftOnImageLeft = s[0] < s[2];
       distanceOk = (span - GuideRules.spanTarget).abs() <= GuideRules.spanTol;
 
-      // Facing: how wide do the shoulders look compared with the torso
-      // height? A patient turned sideways looks narrow. Both are measured
-      // in the same units (x is multiplied by the image's width/height).
-      widthRatio = span > 0 ? ((s[0] - s[2]).abs() * aspect) / span : 0;
-      facingOk = widthRatio >= GuideRules.minWidthRatio;
-      leftOnImageLeft = s[0] < s[2];
-
       midY = (shoulderMidY + hipMidY) / 2;
       heightOk = (midY - GuideRules.midYTarget).abs() <= GuideRules.midYTol;
 
@@ -229,9 +222,7 @@ class GuideChecker {
     String hint;
     if (!personOk) {
       hint = "Point the phone at the patient's back";
-    } else if (!facingOk) {
-      hint = 'Ask the patient to stand square to the camera, back facing you';
-    } else if (!distanceOk) {
+    } else if (!visibleOk) {
       if (!shouldersVisible && !hipsVisible) {
         hint = 'Shoulders and hips are not clear';
       } else if (!shouldersVisible) {
