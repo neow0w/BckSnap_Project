@@ -109,7 +109,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
               ),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: () => context.push('/screening/photo'),
+                onPressed: () => context.push('/screening/for'),
                 child: const Text('Start my first screening'),
               ),
             ],
@@ -240,7 +240,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
             ),
             const SizedBox(height: 12),
             FilledButton(
-              onPressed: () => context.push('/screening/photo'),
+              onPressed: () => context.push('/screening/for'),
               child: Text(due ? 'Start screening' : 'Screen now'),
             ),
           ],

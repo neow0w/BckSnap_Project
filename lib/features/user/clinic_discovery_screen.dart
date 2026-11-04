@@ -28,6 +28,7 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
   String? _mode;
   bool _showMap = false;
   bool _mapReady = false;
+  bool _showFilters = false;
   bool _loading = false;
   bool _reloadRequested = false;
   String? _error;
@@ -323,7 +324,7 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
         },
       ),
     );
-    controller.dispose();
+    Future.delayed(const Duration(milliseconds: 400), controller.dispose);
     if (selected != null && mounted) {
       setState(() => _location = selected);
       await _load();
@@ -344,6 +345,109 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
 
   void _openClinic(ClinicInfo clinic) =>
       context.push('/clinics/${clinic.id}', extra: clinic);
+  bool get _hasFilters =>
+      _location != null ||
+      _serviceFilter.text.trim().isNotEmpty ||
+      _mode != null;
+
+  Widget _filtersPanel() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 240),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _requestLocation,
+                  icon: const Icon(Icons.my_location),
+                  label: const Text('Use my location'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _searchLocation,
+                  icon: const Icon(Icons.place_outlined),
+                  label: const Text('Search location'),
+                ),
+                if (_location != null)
+                  InputChip(
+                    avatar: const Icon(Icons.place, size: 18),
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 220),
+                      child: Text(
+                        _location!.label,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    onDeleted: () {
+                      setState(() => _location = null);
+                      _load();
+                    },
+                  ),
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: _serviceFilter,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _load(),
+                    decoration: InputDecoration(
+                      labelText: 'Medical service',
+                      isDense: true,
+                      suffixIcon: IconButton(
+                        tooltip: 'Apply service filter',
+                        onPressed: _load,
+                        icon: const Icon(Icons.filter_alt),
+                      ),
+                    ),
+                  ),
+                ),
+                DropdownButton<String?>(
+                  value: _mode,
+                  hint: const Text('Any visit type'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: null,
+                      child: Text('Any visit type'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'physical',
+                      child: Text('In person'),
+                    ),
+                    DropdownMenuItem(value: 'online', child: Text('Online')),
+                  ],
+                  onChanged: (mode) {
+                    setState(() => _mode = mode);
+                    _load();
+                  },
+                ),
+              ],
+            ),
+            if (_location != null)
+              Row(
+                children: [
+                  const Text('Search radius'),
+                  Expanded(
+                    child: Slider(
+                      value: _radiusKm,
+                      min: 5,
+                      max: 100,
+                      divisions: 19,
+                      label: '${_radiusKm.round()} km',
+                      onChanged: (value) => setState(() => _radiusKm = value),
+                      onChangeEnd: (_) => _load(),
+                    ),
+                  ),
+                  Text('${_radiusKm.round()} km'),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -370,7 +474,7 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: Column(
                     children: [
                       TextField(
@@ -388,124 +492,54 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                      Row(
                         children: [
-                          OutlinedButton.icon(
-                            onPressed: _requestLocation,
-                            icon: const Icon(Icons.my_location),
-                            label: const Text('Use my location'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: _searchLocation,
-                            icon: const Icon(Icons.place_outlined),
-                            label: const Text('Search location'),
-                          ),
-                          if (_location != null)
-                            InputChip(
-                              avatar: const Icon(Icons.place, size: 18),
-                              label: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 220,
+                          Expanded(
+                            child: SegmentedButton<bool>(
+                              showSelectedIcon: false,
+                              segments: const [
+                                ButtonSegment(
+                                  value: false,
+                                  icon: Icon(Icons.view_list),
+                                  label: Text('List'),
                                 ),
-                                child: Text(
-                                  _location!.label,
-                                  overflow: TextOverflow.ellipsis,
+                                ButtonSegment(
+                                  value: true,
+                                  icon: Icon(Icons.map_outlined),
+                                  label: Text('Map'),
                                 ),
-                              ),
-                              onDeleted: () {
-                                setState(() => _location = null);
-                                _load();
+                              ],
+                              selected: {_showMap},
+                              onSelectionChanged: (value) {
+                                setState(() {
+                                  _showMap = value.first;
+                                  _mapReady = false;
+                                });
                               },
                             ),
-                          SizedBox(
-                            width: 180,
-                            child: TextField(
-                              controller: _serviceFilter,
-                              textInputAction: TextInputAction.search,
-                              onSubmitted: (_) => _load(),
-                              decoration: InputDecoration(
-                                labelText: 'Medical service',
-                                isDense: true,
-                                suffixIcon: IconButton(
-                                  tooltip: 'Apply service filter',
-                                  onPressed: _load,
-                                  icon: const Icon(Icons.filter_alt),
-                                ),
+                          ),
+                          const SizedBox(width: 8),
+                          Badge(
+                            smallSize: 10,
+                            isLabelVisible: _hasFilters,
+                            child: IconButton.filledTonal(
+                              tooltip: 'Filters',
+                              onPressed: () =>
+                                  setState(() => _showFilters = !_showFilters),
+                              icon: Icon(
+                                _showFilters ? Icons.expand_less : Icons.tune,
                               ),
                             ),
                           ),
-                          DropdownButton<String?>(
-                            value: _mode,
-                            hint: const Text('Any visit type'),
-                            items: const [
-                              DropdownMenuItem(
-                                value: null,
-                                child: Text('Any visit type'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'physical',
-                                child: Text('In person'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'online',
-                                child: Text('Online'),
-                              ),
-                            ],
-                            onChanged: (mode) {
-                              setState(() => _mode = mode);
-                              _load();
-                            },
-                          ),
                         ],
                       ),
-                      if (_location != null)
-                        Row(
-                          children: [
-                            const Text('Search radius'),
-                            Expanded(
-                              child: Slider(
-                                value: _radiusKm,
-                                min: 5,
-                                max: 100,
-                                divisions: 19,
-                                label: '${_radiusKm.round()} km',
-                                onChanged: (value) =>
-                                    setState(() => _radiusKm = value),
-                                onChangeEnd: (_) => _load(),
-                              ),
-                            ),
-                            Text('${_radiusKm.round()} km'),
-                          ],
-                        ),
-                      SegmentedButton<bool>(
-                        segments: const [
-                          ButtonSegment(
-                            value: false,
-                            icon: Icon(Icons.view_list),
-                            label: Text('List'),
-                          ),
-                          ButtonSegment(
-                            value: true,
-                            icon: Icon(Icons.map_outlined),
-                            label: Text('Map'),
-                          ),
-                        ],
-                        selected: {_showMap},
-                        onSelectionChanged: (value) {
-                          setState(() {
-                            _showMap = value.first;
-                            _mapReady = false;
-                          });
-                        },
-                      ),
+                      if (_showFilters) _filtersPanel(),
                     ],
                   ),
                 ),
                 if (_loading) const LinearProgressIndicator(),
                 Expanded(
+                  key: const ValueKey('body'),
                   child: _error != null
                       ? _buildErrorState()
                       : _showMap

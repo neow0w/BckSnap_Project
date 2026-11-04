@@ -14,6 +14,7 @@ class _Dest {
 const _receptionDests = [
   _Dest('Requests', Icons.event_note_outlined, '/reception'),
   _Dest('Messages', Icons.chat_bubble_outline, '/reception/inbox'),
+  _Dest('Doctors', Icons.medical_services_outlined, '/reception/staff'),
 ];
 
 const _adminDests = [
@@ -52,6 +53,11 @@ class StaffWebShell extends StatelessWidget {
     if (context.mounted) context.go('/login');
   }
 
+  void _switchProfile(BuildContext context) {
+    AuthService().leaveProfile();
+    context.go('/profiles');
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
@@ -75,6 +81,12 @@ class StaffWebShell extends StatelessWidget {
             appBar: AppBar(
               title: Text(dests[index].label),
               actions: [
+                if (AuthService().isStaffAccount)
+                  IconButton(
+                    tooltip: 'Switch profile',
+                    onPressed: () => _switchProfile(context),
+                    icon: const Icon(Icons.switch_account_outlined),
+                  ),
                 IconButton(
                   tooltip: 'My profile',
                   onPressed: () => context.push('/profile'),
@@ -172,6 +184,12 @@ class StaffWebShell extends StatelessWidget {
                                 user.displayName ?? '',
                                 style: const TextStyle(fontSize: 12),
                               ),
+                            ),
+                          if (AuthService().isStaffAccount)
+                            IconButton(
+                              tooltip: 'Switch profile',
+                              onPressed: () => _switchProfile(context),
+                              icon: const Icon(Icons.switch_account_outlined),
                             ),
                           IconButton(
                             tooltip: 'My profile',

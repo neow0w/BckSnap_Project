@@ -10,6 +10,8 @@ import '../core/image_compress.dart';
 import '../models/app_user.dart';
 import 'api_client.dart';
 import 'audit_log.dart';
+import '../core/profile_crypto.dart';
+import '../models/staff_profile.dart';
 
 class AuthService {
   // One shared instance, so every screen sees the same logged-in user.
@@ -20,9 +22,34 @@ class AuthService {
   final FirebaseAuth _fa = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  AppUser? _user;
+  AppUser? _account; // the Firebase account's own record
+  StaffProfile? _profile; // the profile chosen on a clinic staff account
+  AppUser?
+  _user; // what the app sees: the account, or the account acting as the profile
   AppUser? get currentUser => _user;
   bool get isLoggedIn => _user != null;
+
+  /// True for the shared clinic staff account (a profile is chosen after login).
+  bool get isStaffAccount => _account?.role == 'clinic_staff';
+  StaffProfile? get activeProfile => _profile;
+
+  void _apply() {
+    final a = _account;
+    final p = _profile;
+    if (a == null) {
+      _user = null;
+    } else if (a.role == 'clinic_staff' && p != null) {
+      _user = a.copyWith(role: p.role, name: p.name, profileId: p.id);
+    } else {
+      _user = a;
+    }
+  }
+
+  void _clear() {
+    _account = null;
+    _profile = null;
+    _user = null;
+  }
 
   /// Runs once when the app starts: restores the saved login, if any.
   Future<void> init() async {
@@ -30,7 +57,7 @@ class AuthService {
       final fbUser = await _fa.authStateChanges().first;
       if (fbUser != null) await _loadProfile(fbUser.uid);
     } catch (_) {
-      _user = null; // the app still opens; the user can log in again
+      _clear(); // the app still opens; the user can log in again
     }
   }
 
@@ -39,28 +66,31 @@ class AuthService {
     final data = snap.data();
     if (data == null) {
       await _fa.signOut();
-      _user = null;
+      _clear();
       throw ApiException(404, 'This account has no profile. Please sign up.');
     }
     final u = AppUser.fromMap(uid, data);
     if (kIsWeb && u.role == 'user') {
       await _fa.signOut();
-      _user = null;
+      _clear();
       throw ApiException(
         403,
         'This website is for clinic staff. Patients please use the mobile app.',
       );
     }
-    if ((u.role == 'doctor' || u.role == 'receptionist') &&
+    if ((u.role == 'doctor' ||
+            u.role == 'receptionist' ||
+            u.role == 'clinic_staff') &&
         u.status != 'active') {
       await _fa.signOut();
-      _user = null;
+      _clear();
       throw ApiException(
         403,
         'This account is inactive. Please contact the clinic administrator.',
       );
     }
-    _user = u;
+    _account = u;
+    _apply();
   }
 
   ApiException _authError(FirebaseAuthException e) {
@@ -161,7 +191,9 @@ class AuthService {
         password: password,
       );
       await _loadProfile(cred.user!.uid);
-      if (_user != null && _user!.role != 'user') {
+      if (_user != null &&
+          _user!.role != 'user' &&
+          _user!.role != 'clinic_staff') {
         AuditLog.record(action: 'login');
       }
     } on FirebaseAuthException catch (e) {
@@ -244,26 +276,51 @@ class AuthService {
 
   Future<void> logout() async {
     await _fa.signOut();
-    _user = null;
+    _clear();
   }
 
   /// 'user', 'receptionist' or 'doctor'.
   Future<String> getRole() async => _user?.role ?? 'user';
 
-  /// Admin only: creates a doctor or a receptionist for the admin's clinic.
-  /// A second, temporary Firebase app is used so the admin stays signed in.
-  Future<void> createStaff({
-    required String firstName,
-    required String lastName,
-    required DateTime dateOfBirth,
-    required List<String> professions,
+  // ---- clinic staff account and profiles ------------------------------------
+
+  /// Checks the profile's password and opens that profile.
+  Future<void> chooseProfile(StaffProfile p, String password) async {
+    final acc = _account;
+    if (acc == null || acc.role != 'clinic_staff') {
+      throw ApiException(
+        403,
+        'Please log in with the clinic staff account first.',
+      );
+    }
+    if (!p.isActive || p.clinicId != acc.clinicId) {
+      throw ApiException(403, 'This profile is not available.');
+    }
+    if (ProfileCrypto.hash(p.salt, password) != p.hash) {
+      throw ApiException(401, 'Incorrect password.');
+    }
+    _profile = p;
+    _apply();
+    AuditLog.record(action: 'login');
+  }
+
+  /// Leaves the open profile (back to the profile screen).
+  void leaveProfile() {
+    _profile = null;
+    _apply();
+  }
+
+  /// Admin: creates the clinic's shared staff account.
+  Future<void> createStaffAccount({
     required String email,
     required String password,
-    required String role,
   }) async {
     final me = _user;
     if (me == null || me.role != 'admin' || me.clinicId == null) {
-      throw ApiException(403, 'Only the clinic administrator can add staff.');
+      throw ApiException(
+        403,
+        'Only the clinic administrator can create the staff account.',
+      );
     }
     FirebaseApp app;
     try {
@@ -275,7 +332,6 @@ class AuthService {
       );
     }
     final second = FirebaseAuth.instanceFor(app: app);
-    final fullName = '${firstName.trim()} ${lastName.trim()}';
     try {
       final cred = await second.createUserWithEmailAndPassword(
         email: email.trim(),
@@ -285,40 +341,23 @@ class AuthService {
       try {
         final batch = _db.batch();
         batch.set(_db.collection('users').doc(uid), {
-          'firstName': firstName.trim(),
-          'lastName': lastName.trim(),
-          'name': fullName,
+          'name': 'Clinic staff account',
           'email': email.trim().toLowerCase(),
-          'role': role,
+          'role': 'clinic_staff',
           'status': 'active',
           'clinicId': me.clinicId,
-          'professions': professions,
-          'dateOfBirth': isoDate(dateOfBirth),
           'phone': null,
           'address': null,
           'hasPhoto': false,
           'createdAt': FieldValue.serverTimestamp(),
         });
-        if (role == 'doctor') {
-          // The public doctor card that patients see when booking.
-          batch.set(_db.collection('doctors').doc(uid), {
-            'userId': uid,
-            'clinicId': me.clinicId,
-            'name': fullName,
-            'specializations': professions,
-            'professionalInfo': null,
-            'supportsOnline': true,
-            'supportsPhysical': true,
-            'active': true,
-          });
-        }
         AuditLog.addTo(
           batch,
-          action: 'staff.created',
+          action: 'staff.account_created',
           targetType: 'user',
           targetId: uid,
-          targetName: fullName,
-          details: role,
+          targetName: email.trim().toLowerCase(),
+          details: 'clinic staff account',
         );
         await batch.commit();
       } catch (_) {

@@ -1,35 +1,40 @@
 import 'package:flutter/material.dart';
 
-import '../../core/format.dart';
+import '../../core/profile_crypto.dart';
 import '../../core/validators.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
+import '../../services/profile_service.dart';
 
 /// Returns a message to show when a profile was created, or null if cancelled.
-Future<String?> showAddStaffDialog(BuildContext context) => showDialog<String>(
-  context: context,
-  barrierDismissible: false,
-  builder: (_) => const _AddStaffDialog(),
-);
+/// Admin: doctor or receptionist, active at once.
+/// Receptionist: doctor only, sent to the admin for approval.
+Future<String?> showAddProfileDialog(BuildContext context) =>
+    showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _AddProfileDialog(),
+    );
 
-class _AddStaffDialog extends StatefulWidget {
-  const _AddStaffDialog();
+class _AddProfileDialog extends StatefulWidget {
+  const _AddProfileDialog();
 
   @override
-  State<_AddStaffDialog> createState() => _AddStaffDialogState();
+  State<_AddProfileDialog> createState() => _AddProfileDialogState();
 }
 
-class _AddStaffDialogState extends State<_AddStaffDialog> {
+class _AddProfileDialogState extends State<_AddProfileDialog> {
   final _formKey = GlobalKey<FormState>();
   final _first = TextEditingController();
   final _last = TextEditingController();
-  final _email = TextEditingController();
-  final _password = TextEditingController();
   final _profession = TextEditingController();
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
   final _professions = <String>{};
 
+  final bool _isAdmin = AuthService().currentUser?.role == 'admin';
   String _role = 'doctor';
-  DateTime? _dob;
+  bool _hidden = true;
   bool _saving = false;
   String? _error;
 
@@ -37,9 +42,9 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
   void dispose() {
     _first.dispose();
     _last.dispose();
-    _email.dispose();
-    _password.dispose();
     _profession.dispose();
+    _password.dispose();
+    _confirm.dispose();
     super.dispose();
   }
 
@@ -52,48 +57,31 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
     });
   }
 
-  Future<void> _pickDob() async {
-    final today = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime(today.year - 25, today.month, today.day),
-      firstDate: DateTime(1900),
-      lastDate: today,
-    );
-    if (picked != null) setState(() => _dob = picked);
-  }
-
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_dob == null) {
-      setState(() => _error = 'Please select a date of birth.');
-      return;
-    }
-    if (Validators.ageOn(_dob!, DateTime.now()) < Validators.adultAge) {
-      setState(() => _error = 'Staff must be 18 or older.');
-      return;
-    }
-    if (_role == 'doctor' && _professions.isEmpty) {
-      setState(() => _error = 'Add at least one profession.');
-      return;
+    if (_role == 'doctor') {
+      _addProfession();
+      if (_professions.isEmpty) {
+        setState(() => _error = 'Add at least one profession.');
+        return;
+      }
     }
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      await AuthService().createStaff(
-        firstName: _first.text,
-        lastName: _last.text,
-        dateOfBirth: _dob!,
-        professions: _role == 'doctor' ? _professions.toList() : [],
-        email: _email.text,
-        password: _password.text,
+      await ProfileService().createProfile(
+        name: '${_first.text.trim()} ${_last.text.trim()}',
         role: _role,
+        password: _password.text,
+        professions: _role == 'doctor' ? _professions.toList() : [],
       );
       if (!mounted) return;
       Navigator.of(context).pop(
-        _role == 'doctor'
+        !_isAdmin
+            ? 'Doctor profile sent to the administrator for approval.'
+            : _role == 'doctor'
             ? 'Doctor profile created.'
             : 'Receptionist profile created.',
       );
@@ -117,7 +105,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add Staff Profile'),
+      title: Text(_isAdmin ? 'Add profile' : 'Add doctor profile'),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -126,27 +114,36 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String>(
-                  initialValue: _role,
-                  decoration: const InputDecoration(
-                    labelText: 'Account role',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'doctor', child: Text('Doctor')),
-                    DropdownMenuItem(
-                      value: 'receptionist',
-                      child: Text('Receptionist'),
+                if (_isAdmin) ...[
+                  DropdownButtonFormField<String>(
+                    initialValue: _role,
+                    decoration: const InputDecoration(
+                      labelText: 'Profile role',
+                      border: OutlineInputBorder(),
                     ),
-                  ],
-                  onChanged: _saving
-                      ? null
-                      : (v) => setState(() {
-                          _role = v ?? 'doctor';
-                          _professions.clear();
-                        }),
-                ),
-                const SizedBox(height: 12),
+                    items: const [
+                      DropdownMenuItem(value: 'doctor', child: Text('Doctor')),
+                      DropdownMenuItem(
+                        value: 'receptionist',
+                        child: Text('Receptionist'),
+                      ),
+                    ],
+                    onChanged: _saving
+                        ? null
+                        : (v) => setState(() {
+                            _role = v ?? 'doctor';
+                            _professions.clear();
+                          }),
+                  ),
+                  const SizedBox(height: 12),
+                ] else ...[
+                  const Text(
+                    'The administrator has to approve this profile before '
+                    'it can be used.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextFormField(
                   controller: _first,
                   decoration: const InputDecoration(
@@ -163,16 +160,6 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                     border: OutlineInputBorder(),
                   ),
                   validator: (v) => Validators.name(v, label: 'last name'),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _saving ? null : _pickDob,
-                  icon: const Icon(Icons.calendar_month),
-                  label: Text(
-                    _dob == null
-                        ? 'Select date of birth'
-                        : '${formatDate(_dob!)} (age ${Validators.ageOn(_dob!, DateTime.now())})',
-                  ),
                 ),
                 if (_role == 'doctor') ...[
                   const SizedBox(height: 12),
@@ -208,23 +195,30 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                 ],
                 const SizedBox(height: 12),
                 TextFormField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(),
+                  controller: _password,
+                  obscureText: _hidden,
+                  decoration: InputDecoration(
+                    labelText: 'Profile password',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _hidden ? Icons.visibility_off : Icons.visibility,
+                      ),
+                      onPressed: () => setState(() => _hidden = !_hidden),
+                    ),
                   ),
-                  validator: Validators.email,
+                  validator: ProfileCrypto.validate,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
-                  controller: _password,
-                  obscureText: true,
+                  controller: _confirm,
+                  obscureText: _hidden,
                   decoration: const InputDecoration(
-                    labelText: 'Temporary password',
+                    labelText: 'Confirm password',
                     border: OutlineInputBorder(),
                   ),
-                  validator: Validators.password,
+                  validator: (v) =>
+                      v == _password.text ? null : 'Passwords do not match',
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
@@ -248,7 +242,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Create Profile'),
+              : Text(_isAdmin ? 'Create Profile' : 'Send for approval'),
         ),
       ],
     );

@@ -24,14 +24,6 @@ class HomeScreen extends StatelessWidget {
             onPressed: () => context.push('/profile'),
             icon: const Icon(Icons.person_outline),
           ),
-          IconButton(
-            tooltip: 'Log out',
-            onPressed: () async {
-              await AuthService().logout();
-              if (context.mounted) context.go('/');
-            },
-            icon: const Icon(Icons.logout),
-          ),
         ],
       ),
       body: Center(
@@ -70,7 +62,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: () => context.push('/screening/photo'),
+                onPressed: () => context.push('/screening/for'),
                 icon: const Icon(Icons.accessibility_new),
                 label: const Text('Start a scoliosis screening'),
               ),

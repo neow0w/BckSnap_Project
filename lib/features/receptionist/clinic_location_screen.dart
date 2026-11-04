@@ -9,7 +9,8 @@ import '../../services/clinic_service.dart';
 
 /// The receptionist taps the map to pin the clinic's location.
 class ClinicLocationScreen extends StatefulWidget {
-  const ClinicLocationScreen({super.key});
+  final bool embedded;
+  const ClinicLocationScreen({super.key, this.embedded = false});
 
   @override
   State<ClinicLocationScreen> createState() => _ClinicLocationScreenState();
@@ -64,6 +65,13 @@ class _ClinicLocationScreenState extends State<ClinicLocationScreen> {
       if (mounted) {
         setState(() {
           _error = e.message;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = 'Could not load the clinic.';
           _loading = false;
         });
       }
@@ -124,13 +132,15 @@ class _ClinicLocationScreenState extends State<ClinicLocationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Clinic location'),
-        leading: BackButton(
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/admin'),
-        ),
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Clinic location'),
+              leading: BackButton(
+                onPressed: () =>
+                    context.canPop() ? context.pop() : context.go('/admin'),
+              ),
+            ),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())

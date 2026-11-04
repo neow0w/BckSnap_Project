@@ -8,9 +8,10 @@ import '../../services/screening_draft.dart';
 import '../../services/screening_service.dart';
 import '../../services/tilt_sensor.dart';
 import 'back_levels.dart';
-
 import 'posture_analysis.dart';
 import 'screening_result.dart';
+
+import 'dart:math' as math;
 
 /// Settings for the automatic zero and capture. Tune the numbers here.
 class AutoRules {
@@ -30,6 +31,11 @@ class AutoRules {
 
   // After a good reading, wait this long before the next level.
   static const int advanceMs = 2500;
+  // Each level is read twice in a row. The two readings must agree...
+  static const double agreeTolerance = 1.0;
+  // ...and a reading above this cannot be a real trunk rotation
+  // (the phone is probably not on the back).
+  static const double maxPlausible = 40.0;
 }
 
 enum _Phase { zero, measure, review }
@@ -168,24 +174,48 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
       _capturing = true;
       _message = null;
     });
-    final r = await _sensor.capture();
+
+    // Two readings in a row (one second each). They must agree.
+    final a = await _sensor.capture();
+    final b = (a == null || !mounted) ? null : await _sensor.capture();
     if (!mounted) return;
+
+    String? problem;
+    LevelReading? good;
+    if (a == null || b == null) {
+      problem =
+          'No motion sensor data. Check that this phone has a '
+          'motion sensor and try again.';
+    } else {
+      final diff = (a.angle - b.angle).abs();
+      final angle = (a.angle + b.angle) / 2;
+      if (a.range > TiltRules.maxRange || b.range > TiltRules.maxRange) {
+        problem =
+            'The phone moved during the reading. Hold it steady and it '
+            'will try again.';
+      } else if (diff > AutoRules.agreeTolerance) {
+        problem =
+            'The two readings did not agree (${diff.toStringAsFixed(1)}° '
+            'apart). Hold it steady and it will try again.';
+      } else if (angle.abs() > AutoRules.maxPlausible) {
+        problem =
+            'That reading is too large to be real. Check that the phone '
+            'lies flat on the back, then hold it steady.';
+      } else {
+        good = LevelReading(
+          level,
+          angle,
+          math.max(math.max(a.range, b.range), diff),
+        );
+      }
+    }
+
     setState(() {
       _capturing = false;
-      if (r == null) {
-        _message =
-            'No motion sensor data. Check that this phone has a '
-            'motion sensor and try again.';
-      } else if (r.range > TiltRules.maxRange) {
-        _message =
-            'The phone moved during the reading '
-            '(${r.range.toStringAsFixed(1)}°). Hold it steady and it will '
-            'try again.';
-      } else {
-        _pending = LevelReading(level, r.angle, r.range);
-      }
+      _message = problem;
+      _pending = good;
     });
-    if (_pending != null) {
+    if (good != null) {
       _advanceTimer?.cancel();
       _advanceTimer = Timer(
         const Duration(milliseconds: AutoRules.advanceMs),
@@ -257,7 +287,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
     _resetHold();
     switch (_phase) {
       case _Phase.zero:
-        context.go('/screening/photo');
+        context.go('/screening/steps/scoliometer');
       case _Phase.measure:
         setState(() {
           _pending = null;
@@ -514,12 +544,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
           ),
         ),
       ],
-      actions: [
-        TextButton(
-          onPressed: _setZeroAndStart,
-          child: const Text('Set zero now'),
-        ),
-      ],
+      actions: const [],
     );
   }
 
@@ -618,18 +643,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
           ),
       ],
       actions: pending == null
-          ? [
-              TextButton(
-                onPressed: _capturing ? null : () => _capture(level),
-                child: const Text('Capture now'),
-              ),
-            ]
+          ? const []
           : [
-              FilledButton(
-                onPressed: _keep,
-                child: Text(isLast ? 'Review readings now' : 'Next level now'),
-              ),
-              const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: _remeasure,
                 child: const Text('Re-measure this level'),

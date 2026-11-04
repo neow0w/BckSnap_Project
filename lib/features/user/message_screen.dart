@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../services/api_client.dart';
 import '../../services/message_service.dart';
 import '../../models/message.dart';
+import '../../core/theme.dart';
 
 class MessageScreen extends StatefulWidget {
   final String clinicId;
@@ -98,24 +99,24 @@ class _MessageScreenState extends State<MessageScreen> {
     }
   }
 
-  String _time(DateTime date) {
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final period = date.hour >= 12 ? 'PM' : 'AM';
-
-    return '$hour:$minute $period';
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Contact Clinic'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
+        title: const Text(
+          'Contact Clinic',
+          style: TextStyle(color: Colors.white),
+        ),
         leading: BackButton(
+          color: Colors.white,
           onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/home'),
+              context.canPop() ? context.pop() : context.go('/messages'),
         ),
         actions: [
           IconButton(
@@ -182,7 +183,6 @@ class _MessageScreenState extends State<MessageScreen> {
                         itemBuilder: (context, index) {
                           final message = _messages[index];
                           final isPatient = message.fromPatient;
-
                           return Align(
                             alignment: isPatient
                                 ? Alignment.centerRight
@@ -199,39 +199,38 @@ class _MessageScreenState extends State<MessageScreen> {
                               ),
                               decoration: BoxDecoration(
                                 color: isPatient
-                                    ? theme.colorScheme.primary
-                                    : theme.colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(16),
+                                    ? AppColors.tonal
+                                    : AppColors.fieldFill,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: const Radius.circular(16),
+                                  topRight: const Radius.circular(16),
+                                  bottomLeft: Radius.circular(
+                                    isPatient ? 16 : 4,
+                                  ),
+                                  bottomRight: Radius.circular(
+                                    isPatient ? 4 : 16,
+                                  ),
+                                ),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    isPatient ? 'You' : 'Clinic',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: isPatient
-                                          ? theme.colorScheme.onPrimary
-                                          : theme.colorScheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
                                     message.body,
-                                    style: TextStyle(
-                                      color: isPatient
-                                          ? theme.colorScheme.onPrimary
-                                          : theme.colorScheme.onSurface,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.text,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  Text(
-                                    _time(message.createdAt),
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: isPatient
-                                          ? theme.colorScheme.onPrimary
-                                                .withValues(alpha: 0.8)
-                                          : theme.colorScheme.onSurfaceVariant,
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      timeLabel(message.createdAt),
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: AppColors.hint,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -249,7 +248,7 @@ class _MessageScreenState extends State<MessageScreen> {
               ),
             const Divider(height: 1),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -260,10 +259,24 @@ class _MessageScreenState extends State<MessageScreen> {
                       maxLines: 4,
                       maxLength: 1000,
                       textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
-                        hintText: 'Type your message...',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        hintText: 'Enter text...',
                         counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: const BorderSide(
+                            color: AppColors.primary,
+                            width: 1.5,
+                          ),
+                        ),
                       ),
                       onSubmitted: (_) => _send(),
                     ),
@@ -271,14 +284,21 @@ class _MessageScreenState extends State<MessageScreen> {
                   const SizedBox(width: 8),
                   IconButton.filled(
                     tooltip: 'Send message',
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: _sending ? null : _send,
                     icon: _sending
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
-                        : const Icon(Icons.send),
+                        : const Icon(Icons.send, size: 20),
                   ),
                 ],
               ),

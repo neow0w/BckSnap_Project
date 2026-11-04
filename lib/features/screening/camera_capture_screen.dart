@@ -352,7 +352,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     ScreeningDraft.photoName = 'back_photo.jpg';
     ScreeningDraft.landmarks = _quality?.burst;
     ScreeningDraft.photoQualityGood = _quality?.good ?? false;
-    context.go('/screening/test');
+    context.go('/screening/steps/scoliometer');
   }
 
   void _retake() {
@@ -376,7 +376,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Take Back Photo'),
-        leading: BackButton(onPressed: () => context.go('/home')),
+        leading: BackButton(
+          onPressed: () => context.go('/screening/steps/pose'),
+        ),
       ),
       body: SafeArea(child: _captured != null ? _buildReview() : _buildBody()),
     );
@@ -623,7 +625,13 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (q != null) _qualityCard(q),
+          if (q != null)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.28,
+              ),
+              child: SingleChildScrollView(child: _qualityCard(q)),
+            ),
           const SizedBox(height: 8),
           const Text(
             'Is the image clear and within the guidelines?',

@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../services/api_client.dart';
 import '../../services/clinic_service.dart';
+import '../../core/format.dart';
+import '../../services/auth_service.dart';
 
 /// Shared by the receptionist (Fig 9, isReception: true) and the doctor
 /// (Fig 10, isReception: false).
@@ -76,6 +78,21 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
             onPressed: () => context.push('/reception/inbox'),
             icon: const Icon(Icons.inbox_outlined),
           ),
+        if (widget.isReception)
+          IconButton(
+            tooltip: 'Doctor profiles',
+            onPressed: () => context.push('/reception/doctors'),
+            icon: const Icon(Icons.medical_services_outlined),
+          ),
+        if (AuthService().isStaffAccount)
+          IconButton(
+            tooltip: 'Switch profile',
+            onPressed: () {
+              AuthService().leaveProfile();
+              context.go('/profiles');
+            },
+            icon: const Icon(Icons.switch_account_outlined),
+          ),
         IconButton(
           tooltip: 'My profile',
           onPressed: () => context.push('/profile'),
@@ -102,6 +119,7 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                 ],
               ),
             Expanded(
+              key: const ValueKey('body'),
               child: _loading && _appointments.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : _appointments.isEmpty
@@ -146,7 +164,9 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
             if (appointment.doctorName != null)
               Text('Doctor: ${appointment.doctorName}'),
             if (appointment.scheduledAt != null)
-              Text('Time: ${appointment.scheduledAt!.toLocal()}'),
+              Text(
+                'Time: ${formatDateTime(appointment.scheduledAt!.toLocal())}',
+              ),
             Text(
               'Type: ${appointment.mode == 'online' ? 'Online' : 'In person'}',
             ),

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
-import '../../core/router.dart' show homeFor;
+import '../../core/home_for.dart';
 import '../../services/auth_service.dart';
 import 'profile_avatar.dart';
 
@@ -74,9 +74,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (ok != true) return;
 
     setState(() => _loggingOut = true);
-    await _auth.logout();
+    try {
+      await _auth.logout();
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
     if (!mounted) return;
-    context.go('/'); // back to the landing page (Fig 7 start)
+    context.go('/'); // back to the landing page
   }
 
   @override
@@ -96,7 +100,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         ),
         actions: [
-          if (user != null)
+          if (user != null && !_auth.isStaffAccount)
             IconButton(
               tooltip: 'Edit profile',
               icon: const Icon(Icons.edit),
@@ -134,11 +138,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 4),
                         Center(child: Chip(label: Text(_roleLabel(user.role)))),
                         const SizedBox(height: 8),
-                        FilledButton.tonalIcon(
-                          onPressed: _edit,
-                          icon: const Icon(Icons.edit),
-                          label: const Text('Edit profile'),
-                        ),
+                        if (!_auth.isStaffAccount)
+                          FilledButton.tonalIcon(
+                            onPressed: _edit,
+                            icon: const Icon(Icons.edit),
+                            label: const Text('Edit profile'),
+                          ),
                         const SizedBox(height: 16),
                         Card(
                           child: Column(
@@ -179,6 +184,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => context.push('/privacy'),
                         ),
+                        if (_auth.isStaffAccount)
+                          ListTile(
+                            leading: const Icon(Icons.switch_account_outlined),
+                            title: const Text('Switch profile'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () {
+                              _auth.leaveProfile();
+                              context.go('/profiles');
+                            },
+                          ),
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
                           onPressed: _loggingOut ? null : _logout,
