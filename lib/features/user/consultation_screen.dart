@@ -5,6 +5,8 @@ import 'package:livekit_client/livekit_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/clinic_service.dart';
 import 'consultation_chat_screen.dart';
+import '../../services/screening_service.dart';
+import '../../models/screening.dart';
 
 class ConsultationScreen extends StatefulWidget {
   final String appointmentId;
@@ -22,6 +24,11 @@ class ConsultationScreen extends StatefulWidget {
 
 class _ConsultationScreenState extends State<ConsultationScreen> {
   final ClinicService _clinicService = ClinicService();
+  final ScreeningService _screeningService = ScreeningService();
+
+  List<Screening> _patientScreenings = [];
+  bool _isLoadingScreenings = false;
+  String? _screeningError;
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
@@ -40,6 +47,40 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
   void initState() {
     super.initState();
     _connectToRoom();
+    _loadPatientScreenings();
+  }
+
+  Future<void> _loadPatientScreenings() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoadingScreenings = true;
+      _screeningError = null;
+    });
+
+    try {
+      final appointment = await _clinicService.appointment(
+        widget.appointmentId,
+      );
+
+      final screenings = await _screeningService.screeningsOf(
+        appointment.userId,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _patientScreenings = screenings;
+        _isLoadingScreenings = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _screeningError = 'Unable to load patient screening results.';
+        _isLoadingScreenings = false;
+      });
+    }
   }
 
   Future<void> _connectToRoom() async {
@@ -198,6 +239,111 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
         ),
       );
     }
+  }
+
+  void _showScreeningResults() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (context) {
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.75,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Patient Screening Results',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: _isLoadingScreenings
+                      ? const Center(child: CircularProgressIndicator())
+                      : _screeningError != null
+                      ? Center(child: Text(_screeningError!))
+                      : _patientScreenings.isEmpty
+                      ? const Center(child: Text('No screening results found.'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _patientScreenings.length,
+                          itemBuilder: (context, index) {
+                            final screening = _patientScreenings[index];
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      screening.forSelf
+                                          ? 'Account Holder'
+                                          : screening.subjectName ??
+                                                'Other Screened Person',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Screening Date: '
+                                              '${screening.createdAt.toLocal()}'
+                                          .split('.')[0],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Measured Angle: '
+                                      '${screening.angle.toStringAsFixed(1)}°',
+                                    ),
+                                    Text(
+                                      'Screening Indicator: '
+                                      '${screening.hasScoliosis ? 'Flagged' : 'Not flagged'}',
+                                    ),
+                                    if (screening.details != null) ...[
+                                      const SizedBox(height: 8),
+                                      const Text(
+                                        'Screening Details',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(screening.details.toString()),
+                                    ],
+                                    Text(
+                                      'Photo: ${screening.hasPhoto ? 'Available' : 'Not available'}',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _leaveCall() async {
@@ -402,6 +548,24 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
                 ),
                 if (isDoctor)
                   Positioned(
+                    top: 70,
+                    left: 16,
+                    child: ElevatedButton.icon(
+                      onPressed: _showScreeningResults,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF2563EB),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                      ),
+                      icon: const Icon(Icons.analytics_outlined),
+                      label: const Text('Screening Results'),
+                    ),
+                  ),
+                if (isDoctor)
+                  Positioned(
                     bottom: 105,
                     left: 0,
                     right: 0,
@@ -514,7 +678,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
                       ),
                     ),
                   ),
-                ],
+              ],
             ), // Stack
     );
   }
