@@ -38,22 +38,16 @@ class ProfileService {
     String id,
     String clinicId,
     String name,
+    String professionalType,
     List<String> professions,
   ) {
-    final requiresReferral = professions.any((profession) {
-      final value = profession.toLowerCase();
-
-      return value.contains('physical therapist') ||
-          value.contains('physical therapy') ||
-          value.contains('physiotherapist') ||
-          value.contains('physiotherapy') ||
-          RegExp(r'\bpt\b').hasMatch(value);
-    });
+    final requiresReferral = professionalType == 'Physical Therapist';
 
     return {
       'userId': id,
       'clinicId': clinicId,
       'name': name,
+      'professionalType': professionalType,
       'specializations': professions,
       'requiresReferral': requiresReferral,
       'supportsOnline': true,
@@ -61,6 +55,7 @@ class ProfileService {
       'active': true,
     };
   }
+
   /// All profiles of the clinic (or only the active ones).
   Future<List<StaffProfile>> profiles({bool activeOnly = false}) => _guard(
     () async {
@@ -99,6 +94,7 @@ class ProfileService {
     required String name,
     required String role,
     required String password,
+    String professionalType = 'Doctor',
     List<String> professions = const [],
   }) => _guard(() async {
     final me = _me;
@@ -123,6 +119,7 @@ class ProfileService {
       'clinicId': clinicId,
       'name': cleanName,
       'role': role,
+      'professionalType': role == 'doctor' ? professionalType : null,
       'status': status,
       'professions': role == 'doctor' ? professions : <String>[],
       'passwordSalt': salt,
@@ -134,7 +131,7 @@ class ProfileService {
     if (status == 'active' && role == 'doctor') {
       batch.set(
         _db.collection('doctors').doc(ref.id),
-        _doctorCard(ref.id, clinicId, cleanName, professions),
+        _doctorCard(ref.id, clinicId, cleanName,professionalType, professions),
       );
     }
     AuditLog.addTo(
@@ -161,7 +158,7 @@ class ProfileService {
         if (approve && p.isDoctor) {
           batch.set(
             _db.collection('doctors').doc(p.id),
-            _doctorCard(p.id, p.clinicId, p.name, p.professions),
+            _doctorCard(p.id, p.clinicId, p.name, p.professionalType, p.professions),
           );
         }
         AuditLog.addTo(
@@ -185,7 +182,7 @@ class ProfileService {
     // A doctor is only bookable by patients while active.
     if (p.isDoctor) {
       batch.set(_db.collection('doctors').doc(p.id), {
-        ..._doctorCard(p.id, p.clinicId, p.name, p.professions),
+        ..._doctorCard(p.id, p.clinicId, p.name, p.professionalType, p.professions),
         'active': active,
       }, SetOptions(merge: true));
     }
