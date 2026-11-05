@@ -1,9 +1,10 @@
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:livekit_client/livekit_client.dart';
+
 import '../../services/auth_service.dart';
 import '../../services/clinic_service.dart';
+import 'consultation_chat_screen.dart';
 
 class ConsultationScreen extends StatefulWidget {
   final String appointmentId;
@@ -16,8 +17,7 @@ class ConsultationScreen extends StatefulWidget {
   });
 
   @override
-  State<ConsultationScreen> createState() =>
-      _ConsultationScreenState();
+  State<ConsultationScreen> createState() => _ConsultationScreenState();
 }
 
 class _ConsultationScreenState extends State<ConsultationScreen> {
@@ -28,13 +28,13 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
   VideoTrack? _remoteVideoTrack;
   VideoTrack? _localVideoTrack;
   bool _isConnecting = true;
+  bool _isChatOpen = false;
   bool _isConnected = false;
   bool _isMuted = false;
   bool _isCameraEnabled = true;
   bool _isFrontCamera = true;
   bool _isEnding = false;
   String? _error;
-
 
   @override
   void initState() {
@@ -48,10 +48,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
       final token = widget.credentials['token'] as String;
 
       final room = Room(
-        roomOptions: const RoomOptions(
-          adaptiveStream: true,
-          dynacast: true,
-        ),
+        roomOptions: const RoomOptions(adaptiveStream: true, dynacast: true),
       );
 
       _room = room;
@@ -89,12 +86,12 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
       await localParticipant.setMicrophoneEnabled(true);
 
       final localVideoPublication =
-        localParticipant.videoTrackPublications.firstOrNull;
+          localParticipant.videoTrackPublications.firstOrNull;
 
       if (localVideoPublication?.track is VideoTrack) {
         _localVideoTrack = localVideoPublication!.track as VideoTrack;
       }
-      
+
       if (!mounted) return;
 
       setState(() {
@@ -148,15 +145,13 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
 
       await localParticipant.setCameraEnabled(newCameraState);
 
-      final publication =
-          localParticipant.videoTrackPublications.firstOrNull;
+      final publication = localParticipant.videoTrackPublications.firstOrNull;
 
       if (!mounted) return;
 
       setState(() {
         _isCameraEnabled = newCameraState;
-        _localVideoTrack = newCameraState &&
-                publication?.track is VideoTrack
+        _localVideoTrack = newCameraState && publication?.track is VideoTrack
             ? publication!.track as VideoTrack
             : null;
       });
@@ -176,8 +171,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
     if (localParticipant == null) return;
 
     try {
-      final publication =
-          localParticipant.videoTrackPublications.firstOrNull;
+      final publication = localParticipant.videoTrackPublications.firstOrNull;
 
       final track = publication?.track;
 
@@ -228,7 +222,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
       });
     }
   }
-  
+
   Future<void> _endMeeting() async {
     if (_isEnding) return;
 
@@ -313,174 +307,215 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
         elevation: 0,
       ),
       body: _isConnecting
-    ? const Center(
-        child: CircularProgressIndicator(),
-      )
-    : _error != null
-        ? Center(
-            child: Text(
-              _error!,
-              textAlign: TextAlign.center,
-            ),
-          )
-        : Stack(
-            children: [
-              Positioned(
-                top: 16,
-                left: 16,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.circle,
-                        size: 9,
-                        color: _isConnected ? Colors.greenAccent : Colors.redAccent,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _isConnected ? 'Connected' : 'Disconnected',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? Center(child: Text(_error!, textAlign: TextAlign.center))
+          : Stack(
+              children: [
+                Positioned(
+                  top: 16,
+                  left: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.circle,
+                          size: 9,
+                          color: _isConnected
+                              ? Colors.greenAccent
+                              : Colors.redAccent,
                         ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _isConnected ? 'Connected' : 'Disconnected',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: _remoteVideoTrack != null
+                      ? VideoTrackRenderer(
+                          _remoteVideoTrack!,
+                          fit: VideoViewFit.contain,
+                        )
+                      : const ColoredBox(
+                          color: Color(0xFF1E293B),
+                          child: Center(
+                            child: Text(
+                              'Waiting for the other participant...',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                ),
+                Positioned(
+                  top: 16,
+                  right: 16,
+                  width: MediaQuery.sizeOf(context).width >= 600
+                      ? 220
+                      : MediaQuery.orientationOf(context) ==
+                            Orientation.landscape
+                      ? 170
+                      : 120,
+                  height: MediaQuery.sizeOf(context).width >= 600
+                      ? 140
+                      : MediaQuery.orientationOf(context) ==
+                            Orientation.landscape
+                      ? 110
+                      : 170,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: _localVideoTrack != null
+                        ? VideoTrackRenderer(
+                            _localVideoTrack!,
+                            fit: VideoViewFit.cover,
+                          )
+                        : const ColoredBox(
+                            color: Color(0xFF334155),
+                            child: Center(
+                              child: Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 36,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+                if (isDoctor)
+                  Positioned(
+                    bottom: 105,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: ElevatedButton.icon(
+                        onPressed: _isEnding ? null : _endMeeting,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                        ),
+                        icon: const Icon(Icons.stop_circle_outlined),
+                        label: const Text('End Meeting'),
+                      ),
+                    ),
+                  ),
+                // Bottom call controls
+                Positioned(
+                  bottom: 30,
+                  left: 0,
+                  right: 0,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _isChatOpen = !_isChatOpen;
+                          });
+                        },
+                        style: IconButton.styleFrom(
+                          backgroundColor: _isChatOpen
+                              ? const Color(0xFF2563EB)
+                              : const Color(0xFF334155),
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(56, 56),
+                        ),
+                        icon: const Icon(Icons.chat),
+                        tooltip: 'Open chat',
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton(
+                        onPressed: _toggleMicrophone,
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF334155),
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(56, 56),
+                        ),
+                        icon: Icon(_isMuted ? Icons.mic_off : Icons.mic),
+                      ),
+                      const SizedBox(width: 20),
+                      IconButton(
+                        onPressed: _toggleCamera,
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF334155),
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(56, 56),
+                        ),
+                        icon: Icon(
+                          _isCameraEnabled
+                              ? Icons.videocam
+                              : Icons.videocam_off,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton(
+                        onPressed: _isEnding || !_isCameraEnabled
+                            ? null
+                            : _switchCamera,
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF334155),
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(56, 56),
+                        ),
+                        icon: const Icon(Icons.cameraswitch),
+                      ),
+                      const SizedBox(width: 20),
+                      IconButton(
+                        onPressed: _isEnding ? null : _leaveCall,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(56, 56),
+                        ),
+                        icon: const Icon(Icons.call_end),
                       ),
                     ],
                   ),
                 ),
-              ),
-              Positioned.fill(
-                child: _remoteVideoTrack != null
-                    ? VideoTrackRenderer(
-                        _remoteVideoTrack!,
-                        fit: VideoViewFit.cover,
-                      )
-                    : const ColoredBox(
-                        color: Color(0xFF1E293B),
-                        child: Center(
-                          child: Text(
-                            'Waiting for the other participant...',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
+                if (_isChatOpen)
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    bottom: 105,
+                    width: MediaQuery.sizeOf(context).width >= 700
+                        ? 380
+                        : MediaQuery.sizeOf(context).width * 0.9,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: ConsultationChatScreen(
+                        appointmentId: widget.appointmentId,
+                        onClose: () {
+                          setState(() {
+                            _isChatOpen = false;
+                          });
+                        },
                       ),
-              ),
-
-              Positioned(
-                top: 16,
-                right: 16,
-                width: 120,
-                height: 170,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: _localVideoTrack != null
-                      ? VideoTrackRenderer(
-                          _localVideoTrack!,
-                          fit: VideoViewFit.cover,
-                        )
-                      : const ColoredBox(
-                          color: Color(0xFF334155),
-                          child: Center(
-                            child: Icon(
-                              Icons.person,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-              if (isDoctor)
-                Positioned(
-                  bottom: 105,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: ElevatedButton.icon(
-                      onPressed: _isEnding ? null : _endMeeting,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade700,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                      ),
-                      icon: const Icon(Icons.stop_circle_outlined),
-                      label: const Text('End Meeting'),
                     ),
                   ),
-                ),
-              // Bottom call controls
-              Positioned(
-                bottom: 30,
-                left: 0,
-                right: 0,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      onPressed: _toggleMicrophone,
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFF334155),
-                        foregroundColor: Colors.white,
-                        fixedSize: const Size(56, 56),
-                      ),
-                      icon: Icon(
-                        _isMuted ? Icons.mic_off : Icons.mic,
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    IconButton(
-                      onPressed: _toggleCamera,
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFF334155),
-                        foregroundColor: Colors.white,
-                        fixedSize: const Size(56, 56),
-                      ),
-                      icon: Icon(
-                        _isCameraEnabled
-                            ? Icons.videocam
-                            : Icons.videocam_off,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    IconButton(
-                      onPressed: _isEnding || !_isCameraEnabled ? null : _switchCamera,
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFF334155),
-                        foregroundColor: Colors.white,
-                        fixedSize: const Size(56, 56),
-                      ),
-                      icon:const Icon(Icons.cameraswitch),
-                    ),
-                    const SizedBox(width: 20),
-                    IconButton(
-                      onPressed: _isEnding ? null : _leaveCall,
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        fixedSize: const Size(56, 56),
-                      ),
-                      icon: const Icon(Icons.call_end),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ), // Stack
+                ],
+            ), // Stack
     );
   }
 }

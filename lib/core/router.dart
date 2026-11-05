@@ -42,12 +42,6 @@ import '../features/web/web_patients_page.dart';
 import '../services/auth_service.dart';
 import 'home_for.dart';
 import 'screen_placeholder.dart';
-import '../features/screening/screening_result.dart';
-import '../features/splash/splash_screen.dart';
-import '../features/admin/admin_screen.dart';
-import '../features/admin/audit_log_screen.dart';
-import '../features/screening/person_info_screen.dart';
-import '../features/screening/screening_for_screen.dart';
 import '../features/web/web_doctor_schedule_page.dart';
 import '../features/user/consultation_chat_screen.dart';
 import '../features/user/notifications_screen.dart';
@@ -65,6 +59,7 @@ const _protected = [
   '/clinics',
   '/appointments',
   '/consultation',
+  '/consultation-chat',
   '/notifications',
   '/message',
   '/admin',
@@ -94,7 +89,8 @@ bool _roleAllowed(String role, String loc) {
       return _under(loc, '/reception');
     case 'doctor':
       return _under(loc, '/doctor') ||
-          _under(loc, '/consultation');
+          _under(loc, '/consultation') ||
+          _under(loc, '/consultation-chat');
     default:
       return _under(loc, '/home') ||
           _under(loc, '/referral') ||
@@ -102,6 +98,7 @@ bool _roleAllowed(String role, String loc) {
           _under(loc, '/clinics') ||
           _under(loc, '/appointments') ||
           _under(loc, '/consultation') ||
+          _under(loc, '/consultation-chat') ||
           _under(loc, '/notifications') ||
           _under(loc, '/message') ||
           _under(loc, '/screening') ||
@@ -201,14 +198,13 @@ final List<RouteBase> _webRoutes = [
         path: '/doctor/schedule',
         builder: (c, s) => const WebDoctorSchedulePage(),
       ),
-        ],
-      ),// Consultation routes for the web portal.
+    ],
+  ),
+  // Consultation routes for the web portal.
   GoRoute(
     path: '/consultation-chat/:id',
     builder: (c, s) {
-      return ConsultationChatScreen(
-        appointmentId: s.pathParameters['id']!,
-      );
+      return ConsultationChatScreen(appointmentId: s.pathParameters['id']!);
     },
   ),
   GoRoute(
@@ -327,9 +323,7 @@ final List<RouteBase> _mobileRoutes = [
   GoRoute(
     path: '/consultation-chat/:id',
     builder: (c, s) {
-        return ConsultationChatScreen(
-            appointmentId: s.pathParameters['id']!,
-        );
+      return ConsultationChatScreen(appointmentId: s.pathParameters['id']!);
     },
   ),
 

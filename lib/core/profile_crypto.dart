@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 
 import 'package:crypto/crypto.dart';
 
@@ -11,6 +12,10 @@ class ProfileCrypto {
   static String newSalt() {
     final r = Random.secure();
     return base64UrlEncode(List<int>.generate(16, (_) => r.nextInt(256)));
+  }
+
+  static void testHash() {
+    debugPrint('Flutter test hash: ${hash('test-salt', 'test123')}');
   }
 
   /// Salted SHA-256, repeated, so a leaked hash is slow to guess.

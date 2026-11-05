@@ -39,16 +39,28 @@ class ProfileService {
     String clinicId,
     String name,
     List<String> professions,
-  ) => {
-    'userId': id,
-    'clinicId': clinicId,
-    'name': name,
-    'specializations': professions,
-    'supportsOnline': true,
-    'supportsPhysical': true,
-    'active': true,
-  };
+  ) {
+    final requiresReferral = professions.any((profession) {
+      final value = profession.toLowerCase();
 
+      return value.contains('physical therapist') ||
+          value.contains('physical therapy') ||
+          value.contains('physiotherapist') ||
+          value.contains('physiotherapy') ||
+          RegExp(r'\bpt\b').hasMatch(value);
+    });
+
+    return {
+      'userId': id,
+      'clinicId': clinicId,
+      'name': name,
+      'specializations': professions,
+      'requiresReferral': requiresReferral,
+      'supportsOnline': true,
+      'supportsPhysical': true,
+      'active': true,
+    };
+  }
   /// All profiles of the clinic (or only the active ones).
   Future<List<StaffProfile>> profiles({bool activeOnly = false}) => _guard(
     () async {

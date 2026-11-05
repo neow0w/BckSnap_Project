@@ -10,6 +10,7 @@ import 'auth_service.dart';
 import 'audit_log.dart';
 import '../config/backend_config.dart';
 import '../models/consultation_message.dart';
+import 'dart:typed_data';
 
 class GeoPoint {
   const GeoPoint({
@@ -43,6 +44,7 @@ class ClinicDoctor {
   final bool supportsOnline;
   final bool supportsPhysical;
   final bool isDemo;
+  
 
   factory ClinicDoctor.fromMap(String id, Map<String, dynamic> m) =>
       ClinicDoctor(
@@ -176,6 +178,7 @@ class ClinicAppointment {
     required this.doctorName,
     required this.reference,
     required this.cancellationReason,
+    this.referralImageBytes,
     this.patientName,
     this.isDemo = false,
   });
@@ -195,6 +198,7 @@ class ClinicAppointment {
   final String? doctorName;
   final String? reference;
   final String? cancellationReason;
+  final Uint8List? referralImageBytes;
   final bool isDemo;
 
   bool get canCancel =>
@@ -289,6 +293,8 @@ class ClinicService {
 
   ClinicAppointment _appt(String id, Map<String, dynamic> m) {
     final created = _dt(m['createdAt']) ?? DateTime.now();
+    final referralBlob = m['referralImage'] as Blob?;
+
     return ClinicAppointment(
       id: id,
       userId: (m['userId'] as String?) ?? '',
@@ -304,6 +310,7 @@ class ClinicService {
       doctorId: m['doctorId'] as String?,
       doctorName: m['doctorName'] as String?,
       reference: m['reference'] as String?,
+      referralImageBytes: referralBlob?.bytes,
       cancellationReason: m['cancellationReason'] as String?,
     );
   }
@@ -466,8 +473,8 @@ class ClinicService {
   /// Half-hour slots inside the clinic's operating hours, minus booked ones.
   /// With no hours saved on the clinic, Mon-Fri 09:00-17:00 is used.
 
-/// Generates appointment slots based on the doctor's weekly schedule.
-/// Each consultation lasts 60 minutes, followed by a 10-minute buffer.
+  /// Generates appointment slots based on the doctor's weekly schedule.
+  /// Each consultation lasts 60 minutes, followed by a 10-minute buffer.
 
   /// Generates appointment slots based on the doctor's weekly schedule.
   /// Each consultation lasts 60 minutes, followed by a 10-minute buffer.
@@ -480,155 +487,140 @@ class ClinicService {
     required String doctorId,
     required DateTime date,
     required String mode,
-  }) =>
-      _guard(() async {
-        // Get the doctor's saved weekly schedule.
-        final scheduleSnap = await _db
-            .collection('doctorSchedules')
-            .doc(doctorId)
-            .get();
+  }) => _guard(() async {
+    // Get the doctor's saved weekly schedule.
+    final scheduleSnap = await _db
+        .collection('doctorSchedules')
+        .doc(doctorId)
+        .get();
 
-        if (!scheduleSnap.exists) {
-          return <AppointmentSlot>[];
-        }
+    if (!scheduleSnap.exists) {
+      return <AppointmentSlot>[];
+    }
 
-        final scheduleData = scheduleSnap.data()!;
+    final scheduleData = scheduleSnap.data()!;
 
-        final weeklySchedule = Map<String, dynamic>.from(
-          scheduleData['weeklySchedule'] as Map? ?? {},
-        );
+    final weeklySchedule = Map<String, dynamic>.from(
+      scheduleData['weeklySchedule'] as Map? ?? {},
+    );
 
-        final dayName = _days[date.weekday - 1];
-        final dayData = weeklySchedule[dayName];
+    final dayName = _days[date.weekday - 1];
+    final dayData = weeklySchedule[dayName];
 
-        if (dayData is! Map || dayData['enabled'] != true) {
-          return <AppointmentSlot>[];
-        }
+    if (dayData is! Map || dayData['enabled'] != true) {
+      return <AppointmentSlot>[];
+    }
 
-        final day = Map<String, dynamic>.from(dayData);
+    final day = Map<String, dynamic>.from(dayData);
 
-        final startTime = _at(
-          date,
-          day['timeIn']?.toString() ?? '08:00',
-        );
+    final startTime = _at(date, day['timeIn']?.toString() ?? '08:00');
 
-        final endTime = _at(
-          date,
-          day['timeOut']?.toString() ?? '17:00',
-        );
+    final endTime = _at(date, day['timeOut']?.toString() ?? '17:00');
 
-        // Lunch break.
-        DateTime? lunchStart;
-        DateTime? lunchEnd;
+    // Lunch break.
+    DateTime? lunchStart;
+    DateTime? lunchEnd;
 
-        if (day['lunchBreakEnabled'] == true) {
-          lunchStart = _at(
-            date,
-            day['lunchStart']?.toString() ?? '12:00',
-          );
+    if (day['lunchBreakEnabled'] == true) {
+      lunchStart = _at(date, day['lunchStart']?.toString() ?? '12:00');
 
-          lunchEnd = _at(
-            date,
-            day['lunchEnd']?.toString() ?? '13:00',
-          );
-        }
+      lunchEnd = _at(date, day['lunchEnd']?.toString() ?? '13:00');
+    }
 
-        // Appointment duration and buffer.
-        final appointmentDuration = Duration(
-          minutes: scheduleData['appointmentDuration'] as int? ?? 60,
-        );
+    // Appointment duration and buffer.
+    final appointmentDuration = Duration(
+      minutes: scheduleData['appointmentDuration'] as int? ?? 60,
+    );
 
-        final breakDuration = Duration(
-          minutes: scheduleData['breakDuration'] as int? ?? 10,
-        );
+    final breakDuration = Duration(
+      minutes: scheduleData['breakDuration'] as int? ?? 10,
+    );
 
-        // Retrieve the doctor's existing bookings.
-        final bookedSnap = await _db
-            .collection('bookedSlots')
-            .where('doctorId', isEqualTo: doctorId)
-            .get();
+    // Retrieve the doctor's existing bookings.
+    final bookedSnap = await _db
+        .collection('bookedSlots')
+        .where('doctorId', isEqualTo: doctorId)
+        .get();
 
-        final bookedIntervals = <({DateTime start, DateTime end})>[];
+    final bookedIntervals = <({DateTime start, DateTime end})>[];
 
-        for (final doc in bookedSnap.docs) {
-          final data = doc.data();
+    for (final doc in bookedSnap.docs) {
+      final data = doc.data();
 
-          final bookedStart =
-              (data['startsAt'] as Timestamp).toDate();
+      final bookedStart = (data['startsAt'] as Timestamp).toDate();
 
-          if (bookedStart.year == date.year &&
-              bookedStart.month == date.month &&
-              bookedStart.day == date.day) {
-            bookedIntervals.add((
-              start: bookedStart,
-              end: bookedStart.add(appointmentDuration),
-            ));
+      if (bookedStart.year == date.year &&
+          bookedStart.month == date.month &&
+          bookedStart.day == date.day) {
+        bookedIntervals.add((
+          start: bookedStart,
+          end: bookedStart.add(appointmentDuration),
+        ));
+      }
+    }
+
+    final now = DateTime.now();
+    final slots = <AppointmentSlot>[];
+
+    var current = startTime;
+
+    while (!current.add(appointmentDuration).isAfter(endTime)) {
+      final appointmentEnd = current.add(appointmentDuration);
+
+      // If the appointment overlaps lunch, resume after lunch.
+      if (lunchStart != null &&
+          lunchEnd != null &&
+          current.isBefore(lunchEnd) &&
+          appointmentEnd.isAfter(lunchStart)) {
+        current = lunchEnd;
+        continue;
+      }
+
+      // Check whether this appointment overlaps an existing booking.
+      final overlappingBookings = bookedIntervals.where(
+        (booking) =>
+            current.isBefore(booking.end) &&
+            appointmentEnd.isAfter(booking.start),
+      );
+
+      if (overlappingBookings.isNotEmpty) {
+        // Resume 10 minutes after the latest overlapping booking.
+        DateTime latestEnd = overlappingBookings.first.end;
+
+        for (final booking in overlappingBookings) {
+          if (booking.end.isAfter(latestEnd)) {
+            latestEnd = booking.end;
           }
         }
 
-        final now = DateTime.now();
-        final slots = <AppointmentSlot>[];
+        current = latestEnd.add(breakDuration);
+        continue;
+      }
 
-        var current = startTime;
+      // Only show future appointment slots.
+      if (current.isAfter(now)) {
+        slots.add(
+          AppointmentSlot(
+            startsAt: current,
+            endsAt: appointmentEnd,
+            mode: mode,
+          ),
+        );
+      }
 
-        while (!current.add(appointmentDuration).isAfter(endTime)) {
-          final appointmentEnd = current.add(appointmentDuration);
+      // Normal availability advances by one hour.
+      current = current.add(appointmentDuration);
+    }
 
-          // If the appointment overlaps lunch, resume after lunch.
-          if (lunchStart != null &&
-              lunchEnd != null &&
-              current.isBefore(lunchEnd) &&
-              appointmentEnd.isAfter(lunchStart)) {
-            current = lunchEnd;
-            continue;
-          }
-
-          // Check whether this appointment overlaps an existing booking.
-          final overlappingBookings = bookedIntervals.where(
-            (booking) =>
-                current.isBefore(booking.end) &&
-                appointmentEnd.isAfter(booking.start),
-          );
-
-          if (overlappingBookings.isNotEmpty) {
-            // Resume 10 minutes after the latest overlapping booking.
-            DateTime latestEnd = overlappingBookings.first.end;
-
-            for (final booking in overlappingBookings) {
-              if (booking.end.isAfter(latestEnd)) {
-                latestEnd = booking.end;
-              }
-            }
-
-            current = latestEnd.add(breakDuration);
-            continue;
-          }
-
-          // Only show future appointment slots.
-          if (current.isAfter(now)) {
-            slots.add(
-              AppointmentSlot(
-                startsAt: current,
-                endsAt: appointmentEnd,
-                mode: mode,
-              ),
-            );
-          }
-
-          // Normal availability advances by one hour.
-          current = current.add(appointmentDuration);
-        }
-
-        return slots;
-      });
-
-
+    return slots;
+  });
 
   Future<ClinicAppointment> book({
     required String clinicId,
     required String doctorId,
     required String mode,
     required DateTime startsAt,
+    Uint8List? referralImageBytes,
   }) => _guard(() async {
     final me = _me;
     final clinicSnap = await _db.collection('clinics').doc(clinicId).get();
@@ -674,6 +666,8 @@ class ClinicService {
       'cancellationReason': null,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      if (referralImageBytes != null)
+        'referralImage': Blob(referralImageBytes),
     });
     try {
       await batch.commit();
@@ -756,29 +750,24 @@ class ClinicService {
     }
 
     try {
-      final idToken = await _auth.getFirebaseIdToken();
+      final authToken = _auth.profileSessionToken ??
+        await _auth.getFirebaseIdToken();
 
       final response = await http
           .post(
-            Uri.parse(
-              '${BackendConfig.baseUrl}/api/consultation/token',
-            ),
+            Uri.parse('${BackendConfig.baseUrl}/api/consultation/token'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $idToken',
+              'Authorization': 'Bearer $authToken',
             },
-            body: jsonEncode({
-              'appointmentId': id,
-            }),
+            body: jsonEncode({'appointmentId': id}),
           )
           .timeout(const Duration(seconds: 20));
 
       Map<String, dynamic> data = {};
 
       try {
-        final decoded = jsonDecode(
-          utf8.decode(response.bodyBytes),
-        );
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
 
         if (decoded is Map<String, dynamic>) {
           data = decoded;
@@ -787,8 +776,7 @@ class ClinicService {
         // The server did not return valid JSON.
       }
 
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
         throw ApiException(
           response.statusCode,
           (data['error'] as String?) ??
@@ -816,34 +804,93 @@ class ClinicService {
     }
   }
 
+  /// Doctor: marks an approved appointment as completed.
+  Future<void> completeAppointment(String appointmentId) async {
+    final me = _auth.currentUser;
 
-  /// Doctor: permanently ends the online consultation for both participants.
-  /// The backend independently verifies that the caller is the assigned doctor.
-  Future<void> endConsultation(String appointmentId) async {
+    if (me == null || me.role != 'doctor') {
+      throw ApiException(
+        403,
+        'Only the assigned doctor can complete this appointment.',
+      );
+    }
+
+    final token = _auth.profileSessionToken;
+
+    if (token == null || token.isEmpty) {
+      throw ApiException(
+        401,
+        'Your doctor session has expired. Please select your profile again.',
+      );
+    }
+
     try {
-      final idToken = await _auth.getFirebaseIdToken();
-
       final response = await http
           .post(
-            Uri.parse(
-              '${BackendConfig.baseUrl}/api/consultation/end',
-            ),
+            Uri.parse('${BackendConfig.baseUrl}/api/appointments/complete'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $idToken',
+              'Authorization': 'Bearer $token',
             },
-            body: jsonEncode({
-              'appointmentId': appointmentId,
-            }),
+            body: jsonEncode({'appointmentId': appointmentId}),
           )
           .timeout(const Duration(seconds: 20));
 
       Map<String, dynamic> data = {};
 
       try {
-        final decoded = jsonDecode(
-          utf8.decode(response.bodyBytes),
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        // The server did not return valid JSON.
+      }
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['success'] != true) {
+        throw ApiException(
+          response.statusCode,
+          (data['error'] as String?) ??
+              'Unable to complete the appointment. Please try again.',
         );
+      }
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(
+        0,
+        'Cannot reach the server. Check your internet connection and try again.',
+      );
+    }
+  }
+
+  /// Doctor: permanently ends the online consultation for both participants.
+  /// The backend independently verifies that the caller is the assigned doctor.
+  Future<void> endConsultation(String appointmentId) async {
+    try {
+      final profileToken = _auth.profileSessionToken;
+
+      if (profileToken == null || profileToken.isEmpty) {
+        throw ApiException(401, 'Please sign in to your doctor profile again.');
+      }
+
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.baseUrl}/api/consultation/end'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $profileToken',
+            },
+            body: jsonEncode({'appointmentId': appointmentId}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      Map<String, dynamic> data = {};
+
+      try {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
         if (decoded is Map<String, dynamic>) {
           data = decoded;
         }
@@ -870,10 +917,14 @@ class ClinicService {
       );
     }
   }
-  
+
   Future<void> startInstantMeeting(String appointmentId) async {
     try {
-      final idToken = await _auth.getFirebaseIdToken();
+      final profileToken = _auth.profileSessionToken;
+
+      if (profileToken == null || profileToken.isEmpty) {
+        throw ApiException(401, 'Please sign in to your doctor profile again.');
+      }
 
       final response = await http
           .post(
@@ -882,20 +933,16 @@ class ClinicService {
             ),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $idToken',
+              'Authorization': 'Bearer $profileToken',
             },
-            body: jsonEncode({
-              'appointmentId': appointmentId,
-            }),
+            body: jsonEncode({'appointmentId': appointmentId}),
           )
           .timeout(const Duration(seconds: 20));
 
       Map<String, dynamic> data = {};
 
       try {
-        final decoded = jsonDecode(
-          utf8.decode(response.bodyBytes),
-        );
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
 
         if (decoded is Map<String, dynamic>) {
           data = decoded;
@@ -904,11 +951,9 @@ class ClinicService {
         // The server did not return valid JSON.
       }
 
-      if (
-        response.statusCode < 200 ||
-        response.statusCode >= 300 ||
-        data['success'] != true
-      ) {
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['success'] != true) {
         throw ApiException(
           response.statusCode,
           (data['error'] as String?) ??
@@ -925,7 +970,6 @@ class ClinicService {
       );
     }
   }
-
 
   // ---- notifications ------------------------------------------------------
 
@@ -1102,30 +1146,82 @@ class ClinicService {
         {...d.data(), 'id': d.id, 'createdAt': _dt(d.data()['createdAt'])},
     ];
   });
-    // ---- consultation chat -----------------------------------------------
-  /// Streams messages for a specific approved online appointment.
-  Stream<List<ConsultationMessage>> consultationMessages(
-      String appointmentId,
-  ) {
-    return _db
-        .collection('appointments')
-        .doc(appointmentId)
-        .collection('chatMessages')
-        .orderBy('createdAt', descending: false)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => ConsultationMessage.fromFirestore(doc))
-              .toList();
-        });
+  
+  // ---- consultation chat -----------------------------------------------
+
+  /// Retrieves messages through the backend using the patient's or
+  /// doctor's appropriate authentication token.
+  Future<List<ConsultationMessage>> _getConsultationMessages(
+    String appointmentId,
+  ) async {
+    try {
+      final authToken =
+          _auth.profileSessionToken ?? await _auth.getFirebaseIdToken();
+
+      final uri = Uri.parse(
+        '${BackendConfig.baseUrl}/api/consultation/messages',
+      ).replace(
+        queryParameters: {'appointmentId': appointmentId},
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 20));
+
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+      final data = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['success'] != true) {
+        throw ApiException(
+          response.statusCode,
+          data['error'] as String? ?? 'Unable to load consultation messages.',
+        );
+      }
+
+      final messages = data['messages'] as List? ?? [];
+
+      return messages
+          .whereType<Map>()
+          .map(
+            (message) => ConsultationMessage.fromJson(
+              Map<String, dynamic>.from(message),
+            ),
+          )
+          .toList();
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(
+        0,
+        'Cannot load messages. Please check your internet connection.',
+      );
+    }
   }
 
-  /// Sends a message as the currently logged-in patient or doctor.
+  /// Refreshes the message list every three seconds.
+  Stream<List<ConsultationMessage>> consultationMessages(
+    String appointmentId,
+  ) async* {
+    while (true) {
+      yield await _getConsultationMessages(appointmentId);
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+  }
+
+  /// Sends a message through the authenticated backend endpoint.
   Future<void> sendConsultationMessage(
-      String appointmentId,
-      String text,
+    String appointmentId,
+    String text,
   ) async {
-    final user = _me;
     final message = text.trim();
 
     if (message.isEmpty) {
@@ -1136,31 +1232,51 @@ class ClinicService {
       throw ApiException(422, 'Message cannot exceed 4000 characters.');
     }
 
-    String senderRole;
+    try {
+      final authToken =
+          _auth.profileSessionToken ?? await _auth.getFirebaseIdToken();
 
-    if (user.role == 'user') {
-      senderRole = 'patient';
-    } else if (user.role == 'doctor') {
-      senderRole = 'doctor';
-    } else {
+      final response = await http.post(
+        Uri.parse(
+          '${BackendConfig.baseUrl}/api/consultation/messages',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode({
+          'appointmentId': appointmentId,
+          'text': message,
+        }),
+      ).timeout(const Duration(seconds: 20));
+
+      Map<String, dynamic> data = {};
+
+      try {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        // The server did not return valid JSON.
+      }
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['success'] != true) {
+        throw ApiException(
+          response.statusCode,
+          data['error'] as String? ?? 'Unable to send your message.',
+        );
+      }
+    } on ApiException {
+      rethrow;
+    } catch (_) {
       throw ApiException(
-        403,
-        'Only the patient and assigned doctor can send messages.',
+        0,
+        'Cannot send your message. Please check your internet connection.',
       );
     }
-
-    await _guard(() async {
-      await _db
-          .collection('appointments')
-          .doc(appointmentId)
-          .collection('chatMessages')
-          .add({
-            'senderId': user.id,
-            'senderRole': senderRole,
-            'text': message,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-    });
   }
 }
 

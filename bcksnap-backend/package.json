@@ -19,5 +19,9 @@
   "dependencies": {
     "jose": "^6.2.14",
     "livekit-server-sdk": "^2.19.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261023.1": true
   }
 }

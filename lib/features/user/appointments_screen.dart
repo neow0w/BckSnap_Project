@@ -39,6 +39,76 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     }
   }
 
+  
+Future<void> _cancelAppointment(ClinicAppointment appointment) async {
+  final controller = TextEditingController();
+  final formKey = GlobalKey<FormState>();
+
+  final reason = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Cancel appointment?'),
+      content: Form(
+        key: formKey,
+        child: TextFormField(
+          controller: controller,
+          minLines: 2,
+          maxLines: 4,
+          maxLength: 1000,
+          decoration: const InputDecoration(
+            labelText: 'Reason for cancellation',
+            border: OutlineInputBorder(),
+          ),
+          validator: (value) =>
+              value == null || value.trim().isEmpty
+                  ? 'A cancellation reason is required.'
+                  : null,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Keep appointment'),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (formKey.currentState!.validate()) {
+              Navigator.pop(dialogContext, controller.text.trim());
+            }
+          },
+          child: const Text('Confirm cancellation'),
+        ),
+      ],
+    ),
+  );
+
+  controller.dispose();
+
+  if (reason == null || !mounted) return;
+
+  try {
+    await _service.cancel(appointment.id, reason);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Appointment cancelled successfully.'),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    await _load();
+  } on ApiException catch (error) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error.message)),
+    );
+  }
+}
+
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -170,7 +240,21 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           ],
         ),
       ),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+    if (appointment.canCancel)
+      IconButton(
+        tooltip: 'Cancel appointment',
+        onPressed: () => _cancelAppointment(appointment),
+          icon: const Icon(
+            Icons.event_busy_outlined,
+            color: Colors.red,
+            ),
+          ),
+          const Icon(Icons.chevron_right),
+        ],
+      ),
       onTap: () => context.push('/appointments/${appointment.id}'),
     ),
   );

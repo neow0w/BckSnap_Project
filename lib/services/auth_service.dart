@@ -10,8 +10,10 @@ import '../core/image_compress.dart';
 import '../models/app_user.dart';
 import 'api_client.dart';
 import 'audit_log.dart';
-import '../core/profile_crypto.dart';
 import '../models/staff_profile.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../config/backend_config.dart';
 
 class AuthService {
   // One shared instance, so every screen sees the same logged-in user.
@@ -24,6 +26,8 @@ class AuthService {
 
   AppUser? _account; // the Firebase account's own record
   StaffProfile? _profile; // the profile chosen on a clinic staff account
+  String? _profileSessionToken;
+  String? get profileSessionToken => _profileSessionToken;
   AppUser?
   _user; // what the app sees: the account, or the account acting as the profile
   AppUser? get currentUser => _user;
@@ -49,6 +53,7 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       throw _authError(e);
     }
+  }
   /// True for the shared clinic staff account (a profile is chosen after login).
   bool get isStaffAccount => _account?.role == 'clinic_staff';
   StaffProfile? get activeProfile => _profile;
@@ -295,6 +300,7 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    await leaveProfile();
     await _fa.signOut();
     _clear();
   }
@@ -305,30 +311,137 @@ class AuthService {
   // ---- clinic staff account and profiles ------------------------------------
 
   /// Checks the profile's password and opens that profile.
-  Future<void> chooseProfile(StaffProfile p, String password) async {
-    final acc = _account;
-    if (acc == null || acc.role != 'clinic_staff') {
-      throw ApiException(
-        403,
-        'Please log in with the clinic staff account first.',
-      );
-    }
-    if (!p.isActive || p.clinicId != acc.clinicId) {
-      throw ApiException(403, 'This profile is not available.');
-    }
-    if (ProfileCrypto.hash(p.salt, password) != p.hash) {
-      throw ApiException(401, 'Incorrect password.');
-    }
-    _profile = p;
-    _apply();
-    AuditLog.record(action: 'login');
+Future<void> chooseProfile(StaffProfile p, String password) async {
+  final acc = _account;
+
+  if (acc == null || acc.role != 'clinic_staff') {
+    throw ApiException(
+      403,
+      'Please log in with the clinic staff account first.',
+    );
   }
 
-  /// Leaves the open profile (back to the profile screen).
-  void leaveProfile() {
-    _profile = null;
-    _apply();
+  if (!p.isActive || p.clinicId != acc.clinicId) {
+    throw ApiException(403, 'This profile is not available.');
   }
+
+  try {
+    final firebaseToken = await getFirebaseIdToken();
+
+    final response = await http
+        .post(
+          Uri.parse(
+            '${BackendConfig.baseUrl}/api/profile/session',
+          ),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $firebaseToken',
+          },
+          body: jsonEncode({
+            'profileId': p.id,
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode != 200 ||
+        data is! Map<String, dynamic> ||
+        data['success'] != true ||
+        data['token'] is! String) {
+      final message = data is Map<String, dynamic>
+          ? data['error']?.toString() ??
+              'Unable to start your profile session.'
+          : 'Unable to start your profile session.';
+
+      throw ApiException(response.statusCode, message);
+    }
+
+    _profileSessionToken = data['token'] as String;
+
+    _profile = p;
+    _apply();
+
+    AuditLog.record(action: 'login');
+  } on ApiException {
+    rethrow;
+  } catch (_) {
+    throw ApiException(
+      500,
+      'Unable to connect to the secure profile service. Please try again.',
+    );
+  }
+}
+
+Future<bool> validateProfileSession() async {
+  final token = _profileSessionToken;
+
+  if (token == null || token.isEmpty) {
+    return false;
+  }
+
+  try {
+    final response = await http
+        .post(
+          Uri.parse(
+            '${BackendConfig.baseUrl}/api/profile/session/validate',
+          ),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({}),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode != 200) {
+      _profileSessionToken = null;
+      return false;
+    }
+
+    final data = jsonDecode(response.body);
+
+    if (data is Map<String, dynamic> && data['valid'] == true) {
+      return true;
+    }
+
+    _profileSessionToken = null;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+  /// Leaves the open profile (back to the profile screen).
+  Future<void> leaveProfile() async {
+  final token = _profileSessionToken;
+
+  // Clear the local profile immediately.
+  _profileSessionToken = null;
+  _profile = null;
+  _apply();
+
+  if (token == null || token.isEmpty) {
+    return;
+  }
+
+  try {
+    await http
+        .post(
+          Uri.parse(
+            '${BackendConfig.baseUrl}/api/profile/session/revoke',
+          ),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({}),
+        )
+        .timeout(const Duration(seconds: 20));
+  } catch (_) {
+    // Local profile is already cleared.
+  }
+}
 
   /// Admin: creates the clinic's shared staff account.
   Future<void> createStaffAccount({
