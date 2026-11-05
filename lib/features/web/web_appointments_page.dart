@@ -61,7 +61,7 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
     }
   }
 
-    Future<void> _joinMeeting(ClinicAppointment a) async {
+  Future<void> _joinMeeting(ClinicAppointment a) async {
     setState(() {
       _workingId = a.id;
       _actionError = null;
@@ -74,10 +74,7 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
 
       if (!mounted) return;
 
-      await context.push(
-        '/consultation/${a.id}',
-        extra: credentials,
-      );
+      await context.push('/consultation/${a.id}', extra: credentials);
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _actionError = e.message);
@@ -93,18 +90,58 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
     }
   }
 
+  Future<void> _completeAppointment(ClinicAppointment a) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Complete appointment?'),
+        content: Text(
+          'Mark the appointment for ${a.patientName ?? 'this patient'} '
+          'as completed?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    setState(() {
+      _workingId = a.id;
+      _actionError = null;
+    });
+
+    try {
+      await _service.completeAppointment(a.id);
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _actionError = e.message);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _workingId = null);
+      }
+    }
+  }
+
   Future<void> _openConsultationChat(ClinicAppointment a) async {
     debugPrint('CHAT BUTTON CLICKED: ${a.id}');
 
     try {
-        await GoRouter.of(context).push(
-            '/consultation-chat/${a.id}',
-        );
+      await GoRouter.of(context).push('/consultation-chat/${a.id}');
 
-        debugPrint('CHAT ROUTE CLOSED');
+      debugPrint('CHAT ROUTE CLOSED');
     } catch (e, stackTrace) {
-        debugPrint('CHAT NAVIGATION ERROR: $e');
-        debugPrintStack(stackTrace: stackTrace);
+      debugPrint('CHAT NAVIGATION ERROR: $e');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -269,9 +306,7 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
                         ),
                         DataCell(_statusChip(a.status)),
                         DataCell(
-                          widget.isReception
-                            ? _actions(a)
-                            : _doctorActions(a),
+                          widget.isReception ? _actions(a) : _doctorActions(a),
                         ),
                       ],
                     ),
@@ -309,24 +344,32 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
       ],
     );
   }
+
   Widget _doctorActions(ClinicAppointment a) {
-    if (_workingId == a.id) {
-      return const SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
+  if (_workingId == a.id) {
+    return const SizedBox(
+      width: 24,
+      height: 24,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
+  }
 
-    if (a.status != 'approved' ||
-        a.mode != 'online' ||
-        a.isDemo) {
-      return const Text('-');
-    }
+  if (a.status != 'approved') {
+    return const Text('-');
+  }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      IconButton(
+        tooltip: 'Mark as Completed',
+        onPressed: () => _completeAppointment(a),
+        icon: const Icon(
+          Icons.check_circle_outline,
+          color: Colors.green,
+        ),
+      ),
+      if (a.mode == 'online' && !a.isDemo) ...[
         IconButton(
           tooltip: 'Start Instant Meeting',
           onPressed: () => _joinMeeting(a),
@@ -344,6 +387,7 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
           ),
         ),
       ],
-    );
-  }
+    ],
+  );
+}
 }

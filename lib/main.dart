@@ -6,11 +6,13 @@ import 'core/router.dart';
 import 'core/theme.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
+import 'core/profile_crypto.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await AuthService().init(); // restores the saved login, if any
+  ProfileCrypto.testHash();
   runApp(const ScolioApp());
 }
 

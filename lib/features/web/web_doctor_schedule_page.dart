@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
 
 import '../../models/doctor_schedule.dart';
 import '../../services/doctor_schedule_service.dart';
@@ -195,50 +196,75 @@ class _WebDoctorSchedulePageState extends State<WebDoctorSchedulePage> {
     return null;
   }
 
-  Future<void> _saveSchedule() async {
-    final validationError = _validateSchedule();
+  
+Future<void> _saveSchedule() async {
+  final validationError = _validateSchedule();
 
-    if (validationError != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(validationError)));
-      return;
+  if (validationError != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(validationError)),
+    );
+    return;
+  }
+
+  setState(() {
+    _saving = true;
+    _error = null;
+  });
+
+  try {
+    final authService = AuthService();
+    final account = authService.currentUser;
+    final profile = authService.activeProfile;
+
+    if (account == null || profile == null) {
+      throw Exception('Please select a staff profile first.');
     }
 
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    if (account.role != 'doctor' || !profile.isDoctor) {
+      throw Exception('Only doctor profiles can manage schedules.');
+    }
 
-    try {
-      final schedule = DoctorSchedule(
-        doctorId: _service.doctorId,
-        clinicId: _service.clinicId,
-        timezone: 'Asia/Manila',
-        appointmentDuration: 60,
-        breakDuration: 10,
-        weeklySchedule: Map<String, DoctorDaySchedule>.from(_schedule),
-      );
+    if (!profile.isActive) {
+      throw Exception('Your doctor profile is not active.');
+    }
 
-      await _service.saveMySchedule(schedule);
+    if (profile.clinicId != account.clinicId) {
+      throw Exception('Doctor profile does not belong to this clinic.');
+    }
 
-      if (!mounted) return;
+    final schedule = DoctorSchedule(
+      doctorId: profile.id,
+      clinicId: profile.clinicId,
+      timezone: 'Asia/Manila',
+      appointmentDuration: 60,
+      breakDuration: 10,
+      weeklySchedule: Map<String, DoctorDaySchedule>.from(
+        _schedule,
+      ),
+    );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Your schedule has been saved successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() => _error = e.toString());
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
+    await _service.saveMySchedule(schedule);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Your schedule has been saved successfully!'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  } catch (e) {
+    if (mounted) {
+      setState(() => _error = e.toString());
+    }
+  } finally {
+    if (mounted) {
+      setState(() => _saving = false);
     }
   }
+}
+
 
   Widget _timeField(
     String day,

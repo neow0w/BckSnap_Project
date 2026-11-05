@@ -11,6 +11,7 @@ import 'auth_service.dart';
 import 'audit_log.dart';
 import '../config/backend_config.dart';
 import '../models/consultation_message.dart';
+import 'dart:typed_data';
 
 class GeoPoint {
   const GeoPoint({
@@ -183,6 +184,7 @@ class ClinicAppointment {
     required this.doctorName,
     required this.reference,
     required this.cancellationReason,
+    this.referralImageBytes,
     this.patientName,
     this.isDemo = false,
   });
@@ -202,6 +204,7 @@ class ClinicAppointment {
   final String? doctorName;
   final String? reference;
   final String? cancellationReason;
+  final Uint8List? referralImageBytes;
   final bool isDemo;
 
   bool get canCancel =>
@@ -296,6 +299,8 @@ class ClinicService {
 
   ClinicAppointment _appt(String id, Map<String, dynamic> m) {
     final created = _dt(m['createdAt']) ?? DateTime.now();
+    final referralBlob = m['referralImage'] as Blob?;
+
     return ClinicAppointment(
       id: id,
       userId: (m['userId'] as String?) ?? '',
@@ -311,6 +316,7 @@ class ClinicService {
       doctorId: m['doctorId'] as String?,
       doctorName: m['doctorName'] as String?,
       reference: m['reference'] as String?,
+      referralImageBytes: referralBlob?.bytes,
       cancellationReason: m['cancellationReason'] as String?,
     );
   }
@@ -626,6 +632,7 @@ class ClinicService {
     required String doctorId,
     required String mode,
     required DateTime startsAt,
+    Uint8List? referralImageBytes,
   }) => _guard(() async {
     final me = _me;
     final clinicSnap = await _db.collection('clinics').doc(clinicId).get();
@@ -671,6 +678,8 @@ class ClinicService {
       'cancellationReason': null,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      if (referralImageBytes != null)
+        'referralImage': Blob(referralImageBytes),
     });
     try {
       await batch.commit();
@@ -753,14 +762,15 @@ class ClinicService {
     }
 
     try {
-      final idToken = await _auth.getFirebaseIdToken();
+      final authToken = _auth.profileSessionToken ??
+        await _auth.getFirebaseIdToken();
 
       final response = await http
           .post(
             Uri.parse('${BackendConfig.baseUrl}/api/consultation/token'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $idToken',
+              'Authorization': 'Bearer $authToken',
             },
             body: jsonEncode({'appointmentId': id}),
           )
@@ -806,18 +816,84 @@ class ClinicService {
     }
   }
 
+  /// Doctor: marks an approved appointment as completed.
+  Future<void> completeAppointment(String appointmentId) async {
+    final me = _auth.currentUser;
+
+    if (me == null || me.role != 'doctor') {
+      throw ApiException(
+        403,
+        'Only the assigned doctor can complete this appointment.',
+      );
+    }
+
+    final token = _auth.profileSessionToken;
+
+    if (token == null || token.isEmpty) {
+      throw ApiException(
+        401,
+        'Your doctor session has expired. Please select your profile again.',
+      );
+    }
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.baseUrl}/api/appointments/complete'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'appointmentId': appointmentId}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      Map<String, dynamic> data = {};
+
+      try {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        // The server did not return valid JSON.
+      }
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['success'] != true) {
+        throw ApiException(
+          response.statusCode,
+          (data['error'] as String?) ??
+              'Unable to complete the appointment. Please try again.',
+        );
+      }
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(
+        0,
+        'Cannot reach the server. Check your internet connection and try again.',
+      );
+    }
+  }
+
   /// Doctor: permanently ends the online consultation for both participants.
   /// The backend independently verifies that the caller is the assigned doctor.
   Future<void> endConsultation(String appointmentId) async {
     try {
-      final idToken = await _auth.getFirebaseIdToken();
+      final profileToken = _auth.profileSessionToken;
+
+      if (profileToken == null || profileToken.isEmpty) {
+        throw ApiException(401, 'Please sign in to your doctor profile again.');
+      }
 
       final response = await http
           .post(
             Uri.parse('${BackendConfig.baseUrl}/api/consultation/end'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $idToken',
+              'Authorization': 'Bearer $profileToken',
             },
             body: jsonEncode({'appointmentId': appointmentId}),
           )
@@ -856,7 +932,11 @@ class ClinicService {
 
   Future<void> startInstantMeeting(String appointmentId) async {
     try {
-      final idToken = await _auth.getFirebaseIdToken();
+      final profileToken = _auth.profileSessionToken;
+
+      if (profileToken == null || profileToken.isEmpty) {
+        throw ApiException(401, 'Please sign in to your doctor profile again.');
+      }
 
       final response = await http
           .post(
@@ -865,7 +945,7 @@ class ClinicService {
             ),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $idToken',
+              'Authorization': 'Bearer $profileToken',
             },
             body: jsonEncode({'appointmentId': appointmentId}),
           )
@@ -1090,29 +1170,82 @@ class ClinicService {
     );
     return list.take(300).toList();
   });
-
+  
   // ---- consultation chat -----------------------------------------------
-  /// Streams messages for a specific approved online appointment.
-  Stream<List<ConsultationMessage>> consultationMessages(String appointmentId) {
-    return _db
-        .collection('appointments')
-        .doc(appointmentId)
-        .collection('chatMessages')
-        .orderBy('createdAt', descending: false)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => ConsultationMessage.fromFirestore(doc))
-              .toList();
-        });
+
+  /// Retrieves messages through the backend using the patient's or
+  /// doctor's appropriate authentication token.
+  Future<List<ConsultationMessage>> _getConsultationMessages(
+    String appointmentId,
+  ) async {
+    try {
+      final authToken =
+          _auth.profileSessionToken ?? await _auth.getFirebaseIdToken();
+
+      final uri = Uri.parse(
+        '${BackendConfig.baseUrl}/api/consultation/messages',
+      ).replace(
+        queryParameters: {'appointmentId': appointmentId},
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 20));
+
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+      final data = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['success'] != true) {
+        throw ApiException(
+          response.statusCode,
+          data['error'] as String? ?? 'Unable to load consultation messages.',
+        );
+      }
+
+      final messages = data['messages'] as List? ?? [];
+
+      return messages
+          .whereType<Map>()
+          .map(
+            (message) => ConsultationMessage.fromJson(
+              Map<String, dynamic>.from(message),
+            ),
+          )
+          .toList();
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(
+        0,
+        'Cannot load messages. Please check your internet connection.',
+      );
+    }
   }
 
-  /// Sends a message as the currently logged-in patient or doctor.
+  /// Refreshes the message list every three seconds.
+  Stream<List<ConsultationMessage>> consultationMessages(
+    String appointmentId,
+  ) async* {
+    while (true) {
+      yield await _getConsultationMessages(appointmentId);
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+  }
+
+  /// Sends a message through the authenticated backend endpoint.
   Future<void> sendConsultationMessage(
     String appointmentId,
     String text,
   ) async {
-    final user = _me;
     final message = text.trim();
 
     if (message.isEmpty) {
@@ -1123,31 +1256,51 @@ class ClinicService {
       throw ApiException(422, 'Message cannot exceed 4000 characters.');
     }
 
-    String senderRole;
+    try {
+      final authToken =
+          _auth.profileSessionToken ?? await _auth.getFirebaseIdToken();
 
-    if (user.role == 'user') {
-      senderRole = 'patient';
-    } else if (user.role == 'doctor') {
-      senderRole = 'doctor';
-    } else {
+      final response = await http.post(
+        Uri.parse(
+          '${BackendConfig.baseUrl}/api/consultation/messages',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode({
+          'appointmentId': appointmentId,
+          'text': message,
+        }),
+      ).timeout(const Duration(seconds: 20));
+
+      Map<String, dynamic> data = {};
+
+      try {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        // The server did not return valid JSON.
+      }
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['success'] != true) {
+        throw ApiException(
+          response.statusCode,
+          data['error'] as String? ?? 'Unable to send your message.',
+        );
+      }
+    } on ApiException {
+      rethrow;
+    } catch (_) {
       throw ApiException(
-        403,
-        'Only the patient and assigned doctor can send messages.',
+        0,
+        'Cannot send your message. Please check your internet connection.',
       );
     }
-
-    await _guard(() async {
-      await _db
-          .collection('appointments')
-          .doc(appointmentId)
-          .collection('chatMessages')
-          .add({
-            'senderId': user.id,
-            'senderRole': senderRole,
-            'text': message,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-    });
   }
 }
 

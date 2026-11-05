@@ -34,6 +34,7 @@ class _AddProfileDialogState extends State<_AddProfileDialog> {
 
   final bool _isAdmin = AuthService().currentUser?.role == 'admin';
   String _role = 'doctor';
+  String _professionalType = 'Doctor';
   bool _hidden = true;
   bool _saving = false;
   String? _error;
@@ -75,6 +76,7 @@ class _AddProfileDialogState extends State<_AddProfileDialog> {
         name: '${_first.text.trim()} ${_last.text.trim()}',
         role: _role,
         password: _password.text,
+        professionalType: _professionalType,
         professions: _role == 'doctor' ? _professions.toList() : [],
       );
       if (!mounted) return;
@@ -166,11 +168,34 @@ class _AddProfileDialogState extends State<_AddProfileDialog> {
                 ),
                 if (_role == 'doctor') ...[
                   const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _professionalType,
+                    decoration: const InputDecoration(
+                      labelText: 'Professional type',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'Doctor', child: Text('Doctor')),
+                      DropdownMenuItem(
+                        value: 'Physical Therapist',
+                        child: Text('Physical Therapist'),
+                      ),
+                    ],
+                    onChanged: _saving
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _professionalType = value ?? 'Doctor';
+                              _professions.clear();
+                            });
+                          },
+                  ),
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: _profession,
                     decoration: const InputDecoration(
                       labelText: 'Profession',
-                      hintText: 'e.g. Physical Therapist',
+                      hintText: 'e.g. Cardiologist, Orthopedic Doctor',
                       border: OutlineInputBorder(),
                     ),
                     onFieldSubmitted: (_) => _addProfession(),

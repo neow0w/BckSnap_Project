@@ -63,6 +63,50 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
     }
   }
 
+  Future<void> _completeAppointment(
+    ClinicAppointment appointment,
+    ) async {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Complete appointment?'),
+          content: Text(
+            'Mark the appointment for ${appointment.patientName ?? 'this patient'} as completed?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true || !mounted) return;
+
+      setState(() {
+        _workingId = appointment.id;
+        _error = null;
+      });
+
+      try {
+        await _service.completeAppointment(appointment.id);
+        await _load();
+      } on ApiException catch (error) {
+        if (mounted) {
+          setState(() => _error = error.message);
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _workingId = null);
+        }
+      }
+  }
+
   Future<void> _joinMeeting(ClinicAppointment appointment) async {
     setState(() {
       _workingId = appointment.id;
@@ -227,7 +271,17 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                   ),
                 ] else
                   Chip(label: Text(appointmentStatusLabel(appointment.status))),
-                if (!widget.isReception &&
+                  if (!widget.isReception &&
+                    appointment.status == 'approved') ...[
+                      FilledButton.icon(
+                        onPressed: working
+                          ? null
+                          : () => _completeAppointment(appointment),
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: const Text('Mark as Completed'),
+                      ),
+                    ],
+                  if (!widget.isReception &&
                     appointment.status == 'approved' &&
                     appointment.mode == 'online') ...[
                   FilledButton.icon(

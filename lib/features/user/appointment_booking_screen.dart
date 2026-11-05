@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../services/api_client.dart';
 import '../../services/clinic_service.dart';
+
+import 'dart:typed_data';
+
+import 'package:image/image.dart' as img;
 
 class AppointmentBookingScreen extends StatefulWidget {
   const AppointmentBookingScreen({required this.clinicId, super.key});
@@ -16,6 +21,22 @@ class AppointmentBookingScreen extends StatefulWidget {
 
 class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
   final ClinicService _service = ClinicService();
+  final ImagePicker _imagePicker = ImagePicker();
+  XFile? _referralImage;
+  bool get _requiresReferral {
+    final specializations = _doctor?.specializations ?? [];
+
+    return specializations.any((specialization) {
+      final value = specialization.toLowerCase();
+
+      return value.contains('physical therapist') ||
+          value.contains('physical therapy') ||
+          value.contains('physiotherapist') ||
+          value.contains('physiotherapy') ||
+          RegExp(r'\bpt\b').hasMatch(value);
+    });
+  }
+
   ClinicInfo? _clinic;
   ClinicDoctor? _doctor;
   String? _mode;
@@ -127,11 +148,41 @@ class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
     await _loadSlots();
   }
 
+  Future<void> _pickReferralImage() async {
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+        maxWidth: 1200,
+        maxHeight: 1200,
+      );
+
+      if (image == null || !mounted) return;
+
+      setState(() {
+        _referralImage = image;
+        _error = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = 'Unable to select the referral image. Please try again.';
+      });
+    }
+  }
+
   Future<void> _submit() async {
     final clinic = _clinic;
     final doctor = _doctor;
     final mode = _mode;
     final slot = _selectedSlot;
+    if (_requiresReferral && _referralImage == null) {
+      setState(() {
+        _error = "Please upload your doctor's referral before booking.";
+      });
+      return;
+    }
     if (clinic == null || doctor == null || mode == null || slot == null) {
       setState(
         () => _error = 'Select a doctor, appointment type, and available time.',
@@ -148,6 +199,9 @@ class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
         doctorId: doctor.id,
         mode: mode,
         startsAt: slot.startsAt,
+        referralImageBytes: _requiresReferral
+          ? await _compressReferralImage(_referralImage!)
+          : null,
       );
       if (!mounted) return;
       await showDialog<void>(
@@ -182,6 +236,45 @@ class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  Future<Uint8List> _compressReferralImage(XFile file) async {
+    final originalBytes = await file.readAsBytes();
+    final decodedImage = img.decodeImage(originalBytes);
+
+    if (decodedImage == null) {
+      throw Exception('Unable to read the referral image.');
+    }
+
+    var resizedImage = img.copyResize(
+      decodedImage,
+      width: decodedImage.width > 1200 ? 1200 : decodedImage.width,
+    );
+
+    var quality = 85;
+    var compressedBytes = img.encodeJpg(resizedImage, quality: quality);
+
+    while (compressedBytes.length > 400 * 1024 && quality > 40) {
+      quality -= 10;
+      compressedBytes = img.encodeJpg(resizedImage, quality: quality);
+    }
+
+    while (compressedBytes.length > 400 * 1024 && resizedImage.width > 600) {
+      resizedImage = img.copyResize(
+        resizedImage,
+        width: (resizedImage.width * 0.8).round(),
+      );
+
+      compressedBytes = img.encodeJpg(resizedImage, quality: quality);
+    }
+
+    if (compressedBytes.length > 400 * 1024) {
+      throw Exception(
+        'The referral image is too large. Please choose a smaller image.',
+      );
+    }
+
+    return Uint8List.fromList(compressedBytes);
   }
 
   @override
@@ -246,6 +339,7 @@ class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
                         onChanged: (doctor) {
                           setState(() {
                             _doctor = doctor;
+                            _referralImage = null;
                             final modes = _availableModes(clinic, doctor);
                             _mode = modes.isEmpty ? null : modes.first;
                           });
@@ -277,6 +371,58 @@ class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
                       const Text(
                         'Real appointments are not yet configured for this clinic. Marked DEMO appointment types below are fictional test options only.',
                       ),
+                    ],
+                    if (_requiresReferral) ...[
+                      const SizedBox(height: 20),
+                      Text(
+                        'Doctor\'s Referral (Required)',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Please upload a photo of the referral provided by your previous doctor.',
+                      ),
+                      const SizedBox(height: 12),
+                      if (_referralImage != null)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: FutureBuilder<Uint8List>(
+                            future: _referralImage!.readAsBytes(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData) {
+                                return Image.memory(
+                                  snapshot.data!,
+                                  height: 180,
+                                  width: double.infinity,
+                                  fit: BoxFit.contain,
+                                );
+                              }
+                              return const SizedBox(
+                                height: 100,
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      OutlinedButton.icon(
+                        onPressed: _submitting ? null : _pickReferralImage,
+                        icon: const Icon(Icons.upload_file),
+                        label: Text(
+                          _referralImage == null
+                              ? 'Upload referral image'
+                              : 'Change referral image',
+                        ),
+                      ),
+                      if (_referralImage != null)
+                        TextButton.icon(
+                          onPressed: _submitting
+                              ? null
+                              : () => setState(() => _referralImage = null),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Remove image'),
+                        ),
                     ],
                     const SizedBox(height: 20),
                     Text(

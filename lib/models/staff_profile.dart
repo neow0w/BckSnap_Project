@@ -2,7 +2,8 @@ class StaffProfile {
   final String id;
   final String clinicId;
   final String name;
-  final String role; // receptionist / doctor / pt
+  final String role; // receptionist / doctor
+  final String professionalType;
   final String status; // active / pending / rejected / inactive
   final List<String> professions;
   final String salt;
@@ -15,6 +16,7 @@ class StaffProfile {
     required this.clinicId,
     required this.name,
     required this.role,
+    this.professionalType = 'Doctor',
     required this.status,
     required this.professions,
     required this.salt,
@@ -48,6 +50,7 @@ class StaffProfile {
         clinicId: (m['clinicId'] ?? '') as String,
         name: (m['name'] ?? 'Unnamed') as String,
         role: (m['role'] ?? 'receptionist') as String,
+        professionalType: (m['professionalType'] ?? 'Doctor') as String,
         status: (m['status'] ?? 'active') as String,
         professions: [
           for (final p in (m['professions'] as List? ?? const [])) p.toString(),
