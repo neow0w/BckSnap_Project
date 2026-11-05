@@ -5,10 +5,14 @@ String homeFor(String role) {
       return '/admin';
     case 'receptionist':
       return '/reception';
+    case 'pt':
+      return '/doctor';
     case 'doctor':
       return '/doctor';
     case 'clinic_staff':
       return '/profiles';
+    case 'developer':
+      return '/developer';
     default:
       return '/home';
   }

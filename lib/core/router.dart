@@ -47,6 +47,8 @@ import '../features/user/consultation_chat_screen.dart';
 import '../features/user/notifications_screen.dart';
 import '../features/auth/profile_picker_screen.dart';
 import '../features/receptionist/doctor_profiles_screen.dart';
+import '../features/auth/clinic_registration_screen.dart';
+import '../features/developer/developer_clinics_page.dart';
 
 // Old imports of homeFor from this file keep working.
 export 'home_for.dart' show homeFor;
@@ -68,10 +70,11 @@ const _protected = [
   '/profile',
   '/screening',
   '/progress',
+  '/developer',
 ];
 
 // Screens a logged-in user should never see again.
-const _entryScreens = ['/', '/login', '/signup', '/reset'];
+const _entryScreens = ['/', '/login', '/signup', '/reset', '/register-clinic'];
 
 // Everything a visitor who is not logged in may open.
 const _publicScreens = [..._entryScreens, '/privacy', '/splash'];
@@ -100,6 +103,8 @@ bool _roleAllowed(String role, String loc) {
           _under(loc, '/doctor') ||
           _under(loc, '/consultation') ||
           _under(loc, '/consultation-chat');
+    case 'developer':
+      return _under(loc, '/developer');
     default:
       return _under(loc, '/home') ||
           _under(loc, '/referral') ||
@@ -183,6 +188,11 @@ final List<RouteBase> _webRoutes = [
   GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
   GoRoute(path: '/profile/edit', builder: (c, s) => const EditProfileScreen()),
   GoRoute(path: '/profiles', builder: (c, s) => const ProfilePickerScreen()),
+  GoRoute(
+    path: '/register-clinic',
+    builder: (c, s) => const ClinicRegistrationScreen(),
+  ),
+  GoRoute(path: '/developer', builder: (c, s) => const DeveloperClinicsPage()),
   ShellRoute(
     builder: (context, state, child) =>
         StaffWebShell(location: state.matchedLocation, child: child),

@@ -134,6 +134,21 @@ class AuthService {
         'This website is for clinic staff. Patients please use the mobile app.',
       );
     }
+    if (!kIsWeb && u.role == 'developer') {
+      await _fa.signOut();
+      _clear();
+      throw ApiException(403, 'The developer portal is on the website.');
+    }
+    if (u.role == 'admin' && u.status != 'active') {
+      await _fa.signOut();
+      _clear();
+      throw ApiException(
+        403,
+        u.status == 'rejected'
+            ? 'Your clinic registration was not approved. Please contact the developer.'
+            : 'Your clinic registration is still waiting for approval.',
+      );
+    }
     // Doctors, receptionists and clinic staff must use the website.
     // Administrators may use either platform.
     const staffRoles = ['doctor', 'receptionist', 'pt', 'clinic_staff'];
@@ -432,6 +447,78 @@ class AuthService {
   }
 
   // ---- profile --------------------------------------------------------
+  // ---- clinic registration (website) ---------------------------------------
+
+  /// A clinic asks to join. It creates the administrator login (pending) and
+  /// the registration request. The developer approves it later.
+  Future<void> registerClinic({
+    required String applicantName,
+    required String email,
+    required String password,
+    required String clinicName,
+    required String address,
+    required String phone,
+    required String clinicEmail,
+    required List<String> services,
+    required bool supportsPhysical,
+    required bool supportsOnline,
+    String? description,
+    String? licenseNumber,
+  }) async {
+    UserCredential? cred;
+    try {
+      cred = await _fa.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      final uid = cred.user!.uid;
+      final batch = _db.batch();
+      batch.set(_db.collection('users').doc(uid), {
+        'name': applicantName.trim(),
+        'email': email.trim().toLowerCase(),
+        'role': 'admin',
+        'status': 'pending',
+        'clinicId': null,
+        'phone': null,
+        'address': null,
+        'hasPhoto': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      batch.set(_db.collection('clinicRegistrations').doc(uid), {
+        'applicantId': uid,
+        'applicantName': applicantName.trim(),
+        'applicantEmail': email.trim().toLowerCase(),
+        'clinicName': clinicName.trim(),
+        'address': address.trim(),
+        'phone': phone,
+        'clinicEmail': clinicEmail.trim(),
+        'description': (description ?? '').trim().isEmpty
+            ? null
+            : description!.trim(),
+        'licenseNumber': (licenseNumber ?? '').trim().isEmpty
+            ? null
+            : licenseNumber!.trim(),
+        'services': services,
+        'supportsPhysical': supportsPhysical,
+        'supportsOnline': supportsOnline,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
+      try {
+        await cred.user!.sendEmailVerification();
+      } catch (_) {}
+      await _fa.signOut();
+      _clear();
+    } on FirebaseAuthException catch (e) {
+      throw _authError(e);
+    } on FirebaseException catch (e) {
+      try {
+        await cred?.user?.delete(); // do not leave a login without a request
+      } catch (_) {}
+      throw apiErrorFrom(e);
+    }
+  }
 
   Future<void> updateProfile({
     required String name,

@@ -1066,18 +1066,31 @@ class ClinicService {
   });
 
   /// Admin: the latest audit log entries of the clinic.
+  /// Uses the fast ordered query. If the database index does not exist yet,
+  /// it reads the clinic's entries and sorts them here instead.
   Future<List<Map<String, dynamic>>> auditLogs() => _guard(() async {
-    final snap = await _db
+    final base = _db
         .collection('auditLogs')
-        .where('clinicId', isEqualTo: _me.clinicId)
-        .orderBy('createdAt', descending: true)
-        .limit(300)
-        .get();
-    return [
+        .where('clinicId', isEqualTo: _me.clinicId);
+    QuerySnapshot<Map<String, dynamic>> snap;
+    try {
+      snap = await base.orderBy('createdAt', descending: true).limit(300).get();
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+      snap = await base.get();
+    }
+    final list = [
       for (final d in snap.docs)
         {...d.data(), 'id': d.id, 'createdAt': _dt(d.data()['createdAt'])},
     ];
+    list.sort(
+      (a, b) => ((b['createdAt'] as DateTime?) ?? DateTime(2000)).compareTo(
+        (a['createdAt'] as DateTime?) ?? DateTime(2000),
+      ),
+    );
+    return list.take(300).toList();
   });
+
   // ---- consultation chat -----------------------------------------------
   /// Streams messages for a specific approved online appointment.
   Stream<List<ConsultationMessage>> consultationMessages(String appointmentId) {

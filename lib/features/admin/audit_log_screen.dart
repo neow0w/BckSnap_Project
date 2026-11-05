@@ -153,13 +153,6 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                 onPressed: () =>
                     context.canPop() ? context.pop() : context.go('/admin'),
               ),
-              actions: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _loading ? null : _load,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
             ),
       body: SafeArea(
         child: Center(
@@ -206,26 +199,37 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                   ),
                 Expanded(
                   key: const ValueKey('body'),
-                  child: rows.isEmpty && !_loading
-                      ? const Center(child: Text('No entries to show.'))
-                      : ListView.separated(
-                          padding: const EdgeInsets.all(12),
-                          itemCount: rows.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, i) {
-                            final e = rows[i];
-                            final t = e['createdAt'];
-                            final when = t is DateTime
-                                ? '${formatDate(t)}, ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(t))}'
-                                : '-';
-                            return ListTile(
-                              dense: true,
-                              leading: Icon(_icon('${e['action']}')),
-                              title: Text(_describe(e)),
-                              subtitle: Text('$when   ·   ${e['action']}'),
-                            );
-                          },
-                        ),
+                  child: RefreshIndicator(
+                    onRefresh: _load,
+                    child: rows.isEmpty && !_loading
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 120),
+                              Center(child: Text('No entries to show.')),
+                            ],
+                          )
+                        : ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(12),
+                            itemCount: rows.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, i) {
+                              final e = rows[i];
+                              final t = e['createdAt'];
+                              final when = t is DateTime
+                                  ? '${formatDate(t)}, ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(t))}'
+                                  : '-';
+                              return ListTile(
+                                dense: true,
+                                leading: Icon(_icon('${e['action']}')),
+                                title: Text(_describe(e)),
+                                subtitle: Text('$when   ·   ${e['action']}'),
+                              );
+                            },
+                          ),
+                  ),
                 ),
                 const Padding(
                   padding: EdgeInsets.all(8),

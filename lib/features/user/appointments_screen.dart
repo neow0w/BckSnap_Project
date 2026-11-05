@@ -61,11 +61,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           onPressed: () => context.push('/notifications'),
           icon: const Icon(Icons.notifications_outlined),
         ),
-        IconButton(
-          tooltip: 'Refresh',
-          onPressed: _load,
-          icon: const Icon(Icons.refresh),
-        ),
       ],
     ),
     body: Center(
@@ -98,17 +93,22 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             Expanded(
               child: _loading && _appointments.isEmpty
                   ? const Center(child: CircularProgressIndicator())
-                  : _appointments.isEmpty
-                  ? _empty()
                   : RefreshIndicator(
                       onRefresh: _load,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                        itemCount: _appointments.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) =>
-                            _appointmentCard(_appointments[index]),
-                      ),
+                      child: _appointments.isEmpty
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [const SizedBox(height: 80), _empty()],
+                            )
+                          : ListView.separated(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                              itemCount: _appointments.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) =>
+                                  _appointmentCard(_appointments[index]),
+                            ),
                     ),
             ),
           ],
@@ -334,136 +334,123 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
   Widget build(BuildContext context) {
     final appointment = _appointment;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Appointment details'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh status',
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Appointment details')),
       body: _loading && appointment == null
           ? const Center(child: CircularProgressIndicator())
           : _error != null && appointment == null
           ? _errorView()
           : appointment == null
           ? const Center(child: Text('Appointment is unavailable.'))
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 700),
-                child: ListView(
-                  padding: const EdgeInsets.all(20),
-                  children: [
-                    Text(
-                      appointment.clinicName ??
-                          'Clinic information unavailable',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: 16),
-                    _status(appointment.status),
-                    if (appointment.isDemo) ...[
-                      const SizedBox(height: 12),
-                      Card(
-                        color: Theme.of(context).colorScheme.tertiaryContainer,
-                        child: const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Text(
-                            'DEMO APPOINTMENT — fictional development data. Online consultation is simulated only; no real meeting link is available.',
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    _detail(
-                      'Reference',
-                      appointment.reference ?? 'Unavailable',
-                    ),
-                    _detail('Doctor', appointment.doctorName ?? 'Unavailable'),
-                    if (appointment.doctorId != null &&
-                        !appointment.isDemo &&
-                        (appointment.status == 'pending' ||
-                            appointment.status == 'approved'))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: DoctorPresenceLive(
-                            doctorId: appointment.doctorId!,
-                          ),
-                        ),
-                      ),
-                    _detail(
-                      'Appointment type',
-                      appointment.mode == 'online'
-                          ? appointment.isDemo
-                                ? 'Online — SIMULATED DEMO ONLY'
-                                : 'Online consultation'
-                          : appointment.mode == 'physical'
-                          ? appointment.isDemo
-                                ? 'In-person — DEMO ONLY'
-                                : 'In-person visit'
-                          : 'Unavailable',
-                    ),
-                    _detail(
-                      'Date and time',
-                      appointment.scheduledAt == null
-                          ? 'Not scheduled'
-                          : _formatDateTime(
-                              context,
-                              appointment.scheduledAt!.toLocal(),
-                            ),
-                    ),
-                    if (appointment.mode == 'physical')
-                      _detail(
-                        'Clinic address',
-                        appointment.clinicAddress ?? 'Address unavailable',
-                      ),
-                    if (appointment.cancellationReason != null)
-                      _detail(
-                        'Cancellation reason',
-                        appointment.cancellationReason!,
-                      ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 16),
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 700),
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(20),
+                    children: [
                       Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                        appointment.clinicName ??
+                            'Clinic information unavailable',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 16),
+                      _status(appointment.status),
+                      if (appointment.isDemo) ...[
+                        const SizedBox(height: 12),
+                        Card(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .tertiaryContainer,
+                          child: const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text(
+                              'DEMO APPOINTMENT — fictional development data. Online consultation is simulated only; no real meeting link is available.',
+                            ),
+                          ),
                         ),
+                      ],
+                      const SizedBox(height: 16),
+                      _detail(
+                        'Reference',
+                        appointment.reference ?? 'Unavailable',
                       ),
+                      _detail(
+                        'Doctor',
+                        appointment.doctorName ?? 'Unavailable',
+                      ),
+                      _detail(
+                        'Appointment type',
+                        appointment.mode == 'online'
+                            ? appointment.isDemo
+                                  ? 'Online — SIMULATED DEMO ONLY'
+                                  : 'Online consultation'
+                            : appointment.mode == 'physical'
+                            ? appointment.isDemo
+                                  ? 'In-person — DEMO ONLY'
+                                  : 'In-person visit'
+                            : 'Unavailable',
+                      ),
+                      _detail(
+                        'Date and time',
+                        appointment.scheduledAt == null
+                            ? 'Not scheduled'
+                            : _formatDateTime(
+                                context,
+                                appointment.scheduledAt!.toLocal(),
+                              ),
+                      ),
+                      if (appointment.mode == 'physical')
+                        _detail(
+                          'Clinic address',
+                          appointment.clinicAddress ?? 'Address unavailable',
+                        ),
+                      if (appointment.cancellationReason != null)
+                        _detail(
+                          'Cancellation reason',
+                          appointment.cancellationReason!,
+                        ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ],
+                      if (appointment.status == 'approved' &&
+                          appointment.mode == 'online' &&
+                          !appointment.isDemo) ...[
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          onPressed: _actionLoading ? null : _joinConsultation,
+                          icon: const Icon(Icons.video_call_outlined),
+                          label: const Text('Join consultation'),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _openConsultationChat,
+                          icon: const Icon(Icons.chat_outlined),
+                          label: const Text('Open consultation chat'),
+                        ),
+                      ],
+                      if (appointment.canCancel) ...[
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _actionLoading ? null : _cancel,
+                          icon: const Icon(Icons.event_busy_outlined),
+                          label: const Text('Cancel appointment'),
+                        ),
+                      ],
+                      if (_actionLoading)
+                        const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
                     ],
-                    if (appointment.status == 'approved' &&
-                        appointment.mode == 'online' &&
-                        !appointment.isDemo) ...[
-                      const SizedBox(height: 20),
-                      FilledButton.icon(
-                        onPressed: _actionLoading ? null : _joinConsultation,
-                        icon: const Icon(Icons.video_call_outlined),
-                        label: const Text('Join consultation'),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: _openConsultationChat,
-                        icon: const Icon(Icons.chat_outlined),
-                        label: const Text('Open consultation chat'),
-                      ),
-                    ],
-                    if (appointment.canCancel) ...[
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: _actionLoading ? null : _cancel,
-                        icon: const Icon(Icons.event_busy_outlined),
-                        label: const Text('Cancel appointment'),
-                      ),
-                    ],
-                    if (_actionLoading)
-                      const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                  ],
+                  ),
                 ),
               ),
             ),

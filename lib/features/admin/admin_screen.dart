@@ -180,11 +180,6 @@ class _AdminScreenState extends State<AdminScreen> {
                   onPressed: () => context.push('/profile'),
                   icon: const Icon(Icons.person_outline),
                 ),
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _loading ? null : _load,
-                  icon: const Icon(Icons.refresh),
-                ),
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(

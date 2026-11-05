@@ -146,6 +146,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           onTap: () => context.go('/signup'),
                         ),
                       ],
+                      if (kIsWeb) ...[
+                        const SizedBox(height: 24),
+                        LinkRow(
+                          text: 'Own a clinic?',
+                          linkText: 'Register your clinic',
+                          onTap: () => context.go('/register-clinic'),
+                        ),
+                      ],
                     ],
                   ),
                 ),

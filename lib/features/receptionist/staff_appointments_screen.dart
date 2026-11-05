@@ -65,40 +65,33 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
 
   Future<void> _joinMeeting(ClinicAppointment appointment) async {
     setState(() {
-        _workingId = appointment.id;
-        _error = null;
+      _workingId = appointment.id;
+      _error = null;
     });
 
     try {
-        await _service.startInstantMeeting(appointment.id);
+      await _service.startInstantMeeting(appointment.id);
 
-        final credentials = await _service.consultation(appointment.id);
+      final credentials = await _service.consultation(appointment.id);
 
-        if (!mounted) return;
+      if (!mounted) return;
 
-        await context.push(
-            '/consultation/${appointment.id}',
-            extra: credentials,
-        );
+      await context.push('/consultation/${appointment.id}', extra: credentials);
     } on ApiException catch (error) {
-        if (mounted) {
-            setState(() => _error = error.message);
-        }
+      if (mounted) {
+        setState(() => _error = error.message);
+      }
     } finally {
-        if (mounted) {
-            setState(() => _workingId = null);
-        }
+      if (mounted) {
+        setState(() => _workingId = null);
+      }
     }
   }
 
-  Future<void> _openConsultationChat(
-    ClinicAppointment appointment,
-  ) async {
+  Future<void> _openConsultationChat(ClinicAppointment appointment) async {
     if (widget.isReception) return;
 
-    await context.push(
-        '/consultation-chat/${appointment.id}',
-    );
+    await context.push('/consultation-chat/${appointment.id}');
   }
 
   @override
@@ -136,11 +129,6 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
           onPressed: () => context.push('/profile'),
           icon: const Icon(Icons.person_outline),
         ),
-        IconButton(
-          tooltip: 'Refresh',
-          onPressed: _load,
-          icon: const Icon(Icons.refresh),
-        ),
       ],
     ),
     body: Center(
@@ -160,23 +148,31 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
               key: const ValueKey('body'),
               child: _loading && _appointments.isEmpty
                   ? const Center(child: CircularProgressIndicator())
-                  : _appointments.isEmpty
-                  ? Center(
-                      child: Text(
-                        widget.isReception
-                            ? 'There are no pending appointment requests.'
-                            : 'There are no clinic appointments.',
-                      ),
-                    )
                   : RefreshIndicator(
                       onRefresh: _load,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _appointments.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) =>
-                            _card(context, _appointments[index]),
-                      ),
+                      child: _appointments.isEmpty
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 120),
+                                Center(
+                                  child: Text(
+                                    widget.isReception
+                                        ? 'There are no pending appointment requests.'
+                                        : 'There are no clinic appointments.',
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView.separated(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.all(12),
+                              itemCount: _appointments.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) =>
+                                  _card(context, _appointments[index]),
+                            ),
                     ),
             ),
           ],
@@ -231,22 +227,20 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                   ),
                 ] else
                   Chip(label: Text(appointmentStatusLabel(appointment.status))),
-                  if (!widget.isReception &&
+                if (!widget.isReception &&
                     appointment.status == 'approved' &&
                     appointment.mode == 'online') ...[
-                    FilledButton.icon(
-                      onPressed: working
-                        ? null
-                        : () => _joinMeeting(appointment),
-                      icon: const Icon(Icons.video_call),
-                      label: const Text('Start Instant Meeting'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _openConsultationChat(appointment),
-                      icon: const Icon(Icons.chat),
-                      label: const Text('Chat'),
-                    ),
-                  ],
+                  FilledButton.icon(
+                    onPressed: working ? null : () => _joinMeeting(appointment),
+                    icon: const Icon(Icons.video_call),
+                    label: const Text('Start Instant Meeting'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _openConsultationChat(appointment),
+                    icon: const Icon(Icons.chat),
+                    label: const Text('Chat'),
+                  ),
+                ],
                 if (working)
                   const SizedBox(
                     width: 20,
