@@ -2,7 +2,7 @@ class StaffProfile {
   final String id;
   final String clinicId;
   final String name;
-  final String role; // receptionist / doctor
+  final String role; // receptionist / doctor / pt
   final String professionalType;
   final String status; // active / pending / rejected / inactive
   final List<String> professions;

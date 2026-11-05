@@ -11,10 +11,14 @@ import '../models/app_user.dart';
 import 'api_client.dart';
 import 'audit_log.dart';
 import 'profile_memory.dart';
-import '../core/profile_crypto.dart';
 import '../models/staff_profile.dart';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
+
 import '../config/backend_config.dart';
 
 /// What happened after a Google or Facebook sign-in.
@@ -28,6 +32,10 @@ class AuthService {
 
   final FirebaseAuth _fa = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
+  static const String _profileSessionKey = 'bcksnap_profile_session';
 
   AppUser? _account; // the Firebase account's own record
   StaffProfile? _profile; // the profile chosen on a clinic staff account
@@ -59,6 +67,7 @@ class AuthService {
       throw _authError(e);
     }
   }
+
   /// True for the shared clinic staff account (a profile is chosen after login).
   bool get isStaffAccount => _account?.role == 'clinic_staff';
   StaffProfile? get activeProfile => _profile;
@@ -79,6 +88,7 @@ class AuthService {
     _account = null;
     _profile = null;
     _user = null;
+    _profileSessionToken = null;
     ProfileMemory.clear();
   }
 
@@ -99,25 +109,102 @@ class AuthService {
   /// the clinic staff account does not go back to the profile picker.
   Future<void> _restoreProfile() async {
     final acc = _account;
+
+    // Only shared clinic staff accounts need profile restoration.
     if (acc == null || acc.role != 'clinic_staff') return;
-    final id = ProfileMemory.read();
-    if (id == null) return;
+
+    String? token;
+
     try {
-      final snap = await _db.collection('staffProfiles').doc(id).get();
-      final data = snap.data();
-      if (data == null) {
+      token = await _secureStorage.read(key: _profileSessionKey);
+    } catch (_) {
+      // Storage could not be accessed. Do not delete anything.
+      return;
+    }
+
+    if (token == null || token.isEmpty) return;
+
+    try {
+      // Ask the Cloudflare Worker to validate the saved session.
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.baseUrl}/api/profile/session/validate'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      // The Worker explicitly rejected or expired this session.
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        await _secureStorage.delete(key: _profileSessionKey);
+        ProfileMemory.clear();
+        _profileSessionToken = null;
+        _profile = null;
+        _apply();
+        return;
+      }
+
+      // Other server errors may be temporary. Preserve the token.
+      if (response.statusCode != 200) return;
+
+      final data = jsonDecode(response.body);
+
+      if (data is! Map<String, dynamic> || data['valid'] != true) {
+        return;
+      }
+
+      final profileData = data['profile'];
+
+      if (profileData is! Map<String, dynamic>) return;
+
+      final profileId = profileData['id']?.toString();
+      final clinicId = profileData['clinicId']?.toString();
+      final role = profileData['role']?.toString();
+
+      if (profileId == null ||
+          profileId.isEmpty ||
+          clinicId != acc.clinicId ||
+          (role != 'doctor' && role != 'receptionist' && role != 'pt')) {
+        await _secureStorage.delete(key: _profileSessionKey);
         ProfileMemory.clear();
         return;
       }
-      final p = StaffProfile.fromMap(snap.id, data);
-      if (!p.isActive || p.clinicId != acc.clinicId) {
+
+      // Retrieve the actual staff profile from Firestore.
+      final snap = await _db.collection('staffProfiles').doc(profileId).get();
+
+      final profileMap = snap.data();
+
+      if (profileMap == null) {
+        await _secureStorage.delete(key: _profileSessionKey);
         ProfileMemory.clear();
         return;
       }
+
+      final p = StaffProfile.fromMap(snap.id, profileMap);
+
+      // Double-check that the profile still belongs to this clinic
+      // and has the expected role and active status.
+      if (!p.isActive ||
+          p.clinicId != acc.clinicId ||
+          p.clinicId != clinicId ||
+          p.role != role) {
+        await _secureStorage.delete(key: _profileSessionKey);
+        ProfileMemory.clear();
+        return;
+      }
+
+      // Restore the authenticated staff profile.
+      _profileSessionToken = token;
       _profile = p;
       _apply();
     } catch (_) {
-      // Could not check: the picker simply shows again.
+      // Network or temporary service failure:
+      // Keep the saved token so restoration can be retried.
+      return;
     }
   }
 
@@ -594,137 +681,158 @@ class AuthService {
   // ---- clinic staff account and profiles ------------------------------------
 
   /// Checks the profile's password and opens that profile.
-Future<void> chooseProfile(StaffProfile p, String password) async {
-  final acc = _account;
+  Future<void> chooseProfile(StaffProfile p, String password) async {
+    final acc = _account;
 
-  if (acc == null || acc.role != 'clinic_staff') {
-    throw ApiException(
-      403,
-      'Please log in with the clinic staff account first.',
-    );
-  }
-
-  if (!p.isActive || p.clinicId != acc.clinicId) {
-    throw ApiException(403, 'This profile is not available.');
-  }
-
-  try {
-    final firebaseToken = await getFirebaseIdToken();
-
-    final response = await http
-        .post(
-          Uri.parse(
-            '${BackendConfig.baseUrl}/api/profile/session',
-          ),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $firebaseToken',
-          },
-          body: jsonEncode({
-            'profileId': p.id,
-            'password': password,
-          }),
-        )
-        .timeout(const Duration(seconds: 20));
-
-    final data = jsonDecode(response.body);
-
-    if (response.statusCode != 200 ||
-        data is! Map<String, dynamic> ||
-        data['success'] != true ||
-        data['token'] is! String) {
-      final message = data is Map<String, dynamic>
-          ? data['error']?.toString() ??
-              'Unable to start your profile session.'
-          : 'Unable to start your profile session.';
-
-      throw ApiException(response.statusCode, message);
+    if (acc == null || acc.role != 'clinic_staff') {
+      throw ApiException(
+        403,
+        'Please log in with the clinic staff account first.',
+      );
     }
 
-    _profileSessionToken = data['token'] as String;
+    if (!p.isActive || p.clinicId != acc.clinicId) {
+      throw ApiException(403, 'This profile is not available.');
+    }
 
-    _profile = p;
-    _apply();
-    ProfileMemory.save(p.id);
-    AuditLog.record(action: 'login');
-  } on ApiException {
-    rethrow;
-  } catch (_) {
-    throw ApiException(
-      500,
-      'Unable to connect to the secure profile service. Please try again.',
-    );
+    try {
+      final firebaseToken = await getFirebaseIdToken();
+
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.baseUrl}/api/profile/session'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $firebaseToken',
+            },
+            body: jsonEncode({'profileId': p.id, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode != 200 ||
+          data is! Map<String, dynamic> ||
+          data['success'] != true ||
+          data['token'] is! String) {
+        final message = data is Map<String, dynamic>
+            ? data['error']?.toString() ??
+                  'Unable to start your profile session.'
+            : 'Unable to start your profile session.';
+
+        throw ApiException(response.statusCode, message);
+      }
+      final token = data['token'] as String;
+
+      // Save the session securely so it survives browser refreshes.
+      await _secureStorage.write(key: _profileSessionKey, value: token);
+
+      _profileSessionToken = data['token'] as String;
+
+      _profile = p;
+      _apply();
+      ProfileMemory.save(p.id);
+      AuditLog.record(action: 'login');
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(
+        500,
+        'Unable to connect to the secure profile service. Please try again.',
+      );
+    }
   }
-}
 
-Future<bool> validateProfileSession() async {
-  final token = _profileSessionToken;
+  Future<bool> validateProfileSession() async {
+    final token = _profileSessionToken;
 
-  if (token == null || token.isEmpty) {
-    return false;
-  }
-
-  try {
-    final response = await http
-        .post(
-          Uri.parse(
-            '${BackendConfig.baseUrl}/api/profile/session/validate',
-          ),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({}),
-        )
-        .timeout(const Duration(seconds: 20));
-
-    if (response.statusCode != 200) {
-      _profileSessionToken = null;
+    if (token == null || token.isEmpty) {
       return false;
     }
 
-    final data = jsonDecode(response.body);
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.baseUrl}/api/profile/session/validate'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({}),
+          )
+          .timeout(const Duration(seconds: 20));
 
-    if (data is Map<String, dynamic> && data['valid'] == true) {
-      return true;
+      // The server explicitly rejected the session.
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        _profileSessionToken = null;
+        _profile = null;
+        ProfileMemory.clear();
+        _apply();
+
+        await _secureStorage.delete(key: _profileSessionKey);
+        return false;
+      }
+
+      // Preserve the token for temporary server errors.
+      if (response.statusCode != 200) {
+        return false;
+      }
+
+      final data = jsonDecode(response.body);
+
+      if (data is Map<String, dynamic> && data['valid'] == true) {
+        return true;
+      }
+
+      // A successful response explicitly says the session is invalid.
+      _profileSessionToken = null;
+      _profile = null;
+      ProfileMemory.clear();
+      _apply();
+
+      await _secureStorage.delete(key: _profileSessionKey);
+      return false;
+    } catch (_) {
+      // Network or temporary service failure.
+      // Keep the saved token so validation can be retried.
+      return false;
+    }
+  }
+
+  Future<void> leaveProfile() async {
+    final token = _profileSessionToken;
+
+    // Clear the local session immediately.
+    _profileSessionToken = null;
+    _profile = null;
+    ProfileMemory.clear();
+    _apply();
+
+    // Remove the saved token from secure storage.
+    try {
+      await _secureStorage.delete(key: _profileSessionKey);
+    } catch (_) {
+      // Continue with server-side revocation.
     }
 
-    _profileSessionToken = null;
-    return false;
-  } catch (_) {
-    return false;
-  }
-}
-  /// Leaves the open profile (back to the profile screen).
-  Future<void> leaveProfile() async {
-  final token = _profileSessionToken;
+    if (token == null || token.isEmpty) return;
 
-  // Clear the local profile immediately.
-  _profileSessionToken = null;
-  _profile = null;
-  _apply();
-
-  if (token == null || token.isEmpty) {
-    return;
+    // Revoke the session on the Cloudflare Worker.
+    try {
+      await http
+          .post(
+            Uri.parse('${BackendConfig.baseUrl}/api/profile/session/revoke'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({}),
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (_) {
+      // Local session is already cleared.
+    }
   }
-
-  try {
-    await http
-        .post(
-          Uri.parse(
-            '${BackendConfig.baseUrl}/api/profile/session/revoke',
-          ),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({}),
-        )
-        .timeout(const Duration(seconds: 20));
-  } catch (_) {
-    // Local profile is already cleared.
-  }
-}
 
   /// Admin: creates the clinic's shared staff account.
   Future<void> createStaffAccount({

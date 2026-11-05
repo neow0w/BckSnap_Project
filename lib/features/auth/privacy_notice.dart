@@ -2,104 +2,158 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 // ---------------------------------------------------------------------------
-// DRAFT TEXT. Before real users see this:
-//   1. Replace every [PLACEHOLDER] below.
-//   2. Check each statement is true for YOUR system (storage, retention,
-//      who has access).
-//   3. Have your adviser / school / the clinic review it against the privacy
-//      law that applies where you operate.
-// If you change the meaning of the notice, raise [version] so the server
-// records which text each person agreed to.
+// BCKSNAP PRIVACY NOTICE
+// Data Privacy Act of 2012 (R.A. 10173)
+//
+// Before deployment:
+//   1. Confirm the effective date.
+//   2. Verify that the described security and anonymization measures
+//      are implemented in your actual system.
+//   3. Confirm the retention and deletion procedures with your adviser.
+//   4. Have the notice reviewed for compliance with applicable privacy laws.
 // ---------------------------------------------------------------------------
 
 class NoticeSection {
   final String title;
   final String body;
+
   const NoticeSection(this.title, this.body);
 }
 
 class PrivacyNotice {
-  static const String version = '1.0';
+  static const String version = '2.0';
   static const String effectiveDate = '[EFFECTIVE DATE]';
-  static const String organization = '[PROJECT / CLINIC NAME]';
-  static const String contact = '[PRIVACY CONTACT EMAIL]';
+  static const String organization = 'BckSnap';
 
   /// Short version shown on the consent step.
   static const List<String> summary = [
-    'We collect your name, email and date of birth. If you screen, we also '
-        'collect a photo of the back and the trunk-rotation reading.',
-    'We use it to run the screening, show your result, and support clinic '
-        'referral and appointments.',
-    'Only you and the clinic staff who handle your care (receptionists and '
-        'doctors) can see it.',
-    'You can ask to see, correct or delete your data, and you can withdraw '
-        'your consent at any time.',
+    'BckSnap collects your age, sex, profile details, posture photographs, '
+        'screening results, and evaluation questionnaire responses.',
+    'Your information is used for posture screening, trunk rotation '
+        'assessment, clinic referrals, and academic system evaluation '
+        'under the ISO/IEC 25010 framework.',
+    'Your personal identity is separated from screening records using '
+        'a unique participant code. Data is accessible only to authorized '
+        'researchers and the research adviser.',
+    'You may access, correct, or request deletion of your personal data. '
+        'You may also withdraw your consent before dataset consolidation.',
+    'Your personal information and raw screening photographs will be '
+        'securely deleted after the capstone project is completed, '
+        'defended, and approved.',
   ];
 
   static const List<NoticeSection> sections = [
     NoticeSection(
-      '1. Who we are',
-      '$organization runs this app. Questions about your data can be sent to '
-          '$contact.',
+      '1. Introduction',
+      'We respect every individual\'s right to privacy as much as we aim '
+          'to ensure the safety and security of everyone participating '
+          'in our evaluation sessions. Please take the time to read this '
+          'Privacy Notice explaining how we process the information we '
+          'collect from or generate about you when you use the BckSnap '
+          'application, in accordance with the Data Privacy Act of 2012 '
+          '(R.A. 10173).\n\n'
+          'Those who undergo our app-assisted screening or system '
+          'evaluation will have been shown a similar Notice before or '
+          'around the time their session or data collection begins.',
     ),
+
     NoticeSection(
-      '2. What we collect',
-      '• Account details: name, email, date of birth, and optionally phone '
-          'number, address and a profile picture.\n'
-          '• Screening data: the photo of the back, the trunk-rotation angle '
-          'and the screening result. This is health-related (sensitive) '
-          'information.\n'
-          '• Care activity: appointment requests, their status, and messages '
-          'you send to the clinic.\n'
-          '• For people under 18: the parent or guardian\'s name, relationship '
-          'and contact details.',
+      '2. What We Collect',
+      'To perform posture screening, compute trunk rotation metrics, '
+          'and facilitate clinic referrals, BckSnap collects the '
+          'following categories of data:\n\n'
+          '• Account and Profile Details: Your age, sex, and basic '
+          'profile identifiers collected during registration or screening.\n\n'
+          '• Screening and Posture Data: Digital photographs of the back '
+          'captured during app-assisted posture checks and Adam\'s Forward '
+          'Bend Test (AFBT) workflows, along with pose-estimation '
+          'asymmetry metrics and risk classifications.\n\n'
+          '• Evaluation Data: Responses provided through the ISO/IEC 25010 '
+          'system evaluation questionnaires by user beneficiaries '
+          'and clinic staff.',
     ),
+
     NoticeSection(
-      '3. Why we use it',
-      '• To create and secure your account.\n'
-          '• To carry out the scoliosis screening and show you the result.\n'
-          '• To let the clinic review your screening, approve appointments '
-          'and contact you.\n'
-          '• We do not sell your data and do not use it for advertising.',
+      '3. How BckSnap Uses Your Data',
+      'Your data is processed within the app environment and research '
+          'pipeline for the following purposes:\n\n'
+          '• Executing on-device camera tracking and posture calculations.\n\n'
+          '• Generating screening risk assessments and connecting you '
+          'with local partner clinics if a referral is needed.\n\n'
+          '• Evaluating app usability and software quality under the '
+          'ISO/IEC 25010 framework to improve our capstone project.',
     ),
+
     NoticeSection(
-      '4. Who can see it',
-      'You can see your own data. Clinic receptionists and doctors can see '
-          'the information needed to handle your appointment and referral. '
-          'Anyone else only sees it if the law requires it.',
+      '4. Anonymity and Data Security',
+      'Anonymization: All personal identities are decoupled from raw '
+          'screening records. Each participant is assigned a unique '
+          'participant code to ensure that data handled during analysis '
+          'remains anonymous.\n\n'
+          'Encryption and Storage: All digital files, photographs, and '
+          'records are stored in secure, password-protected cloud storage '
+          'and encrypted digital folders accessible only by authorized '
+          'researchers and the research adviser.\n\n'
+          'Physical Privacy: Screening sessions are conducted in private, '
+          'quiet areas within partner clinics to respect your personal '
+          'space and dignity.',
     ),
+
     NoticeSection(
-      '5. How we protect it',
-      'Your data is kept on a protected server and access is limited by role. '
-          '[DESCRIBE YOUR REAL SAFEGUARDS: e.g. encrypted connection, hashed '
-          'passwords, access logs.]',
+      '5. Data Retention and Disposal',
+      'Personal records, screening photographs, and evaluation data '
+          'will be retained only for the duration of the academic '
+          'capstone project.\n\n'
+          'Once the research has been completed, defended, and approved, '
+          'all raw image files and personally identifiable information '
+          'will be permanently and securely deleted from all mobile '
+          'devices, local drives, and cloud repositories.',
     ),
+
     NoticeSection(
-      '6. How long we keep it',
-      '[STATE YOUR RETENTION PERIOD.] When you delete your account, your '
-          'data is removed unless the law requires us to keep it.',
+      '6. Your Rights as a Data Subject',
+      'In accordance with the Data Privacy Act of 2012 (R.A. 10173), '
+          'you have the following rights as a data subject:\n\n'
+          '• Right to Be Informed: You have the right to know how your '
+          'personal data is collected, used, stored, and processed.\n\n'
+          '• Right to Access: You may request access to your personal data.\n\n'
+          '• Right to Object and Withdraw Consent: You may object to '
+          'or withdraw your consent at any time prior to dataset '
+          'consolidation, without penalty or loss of benefits.\n\n'
+          '• Right to Rectification: You may request the correction '
+          'of inaccurate or incomplete personal information.\n\n'
+          '• Right to Erasure or Blocking: You may request the deletion '
+          'of your personal records, subject to applicable legal '
+          'requirements and the stage of research processing.',
     ),
+
     NoticeSection(
-      '7. Your rights',
-      'You may ask to access, correct or delete your data, and you may '
-          'withdraw your consent at any time. Withdrawing consent does not '
-          'affect what was done before, but we may no longer be able to '
-          'provide the service. Contact $contact.',
-    ),
-    NoticeSection(
-      '8. Children and teenagers',
-      'People aged 9 to 17 need a parent or legal guardian to give consent, '
-          'and the young person is also asked to agree (assent) in simple '
-          'words. People under 9 cannot create an account.',
-    ),
-    NoticeSection(
-      '9. Screening is not a diagnosis',
-      'The result is a screening aid. Only a doctor can confirm scoliosis.',
+      '7. Contact Us and Privacy Concerns',
+      'If you have any questions, concerns, or requests regarding '
+          'this Privacy Notice or how your data is handled, you may '
+          'contact any member of our research team through the '
+          'following contact details:\n\n'
+          'Jana Beatrice B. Agustin\n'
+          'Email: janabeatrice@gmail.com\n'
+          'Contact Number: 0995-364-9868\n\n'
+          'Peavey Iya J. Carpaccio\n'
+          'Email: peaveycapacio@gmail.com\n'
+          'Contact Number: 0975-891-6089\n\n'
+          'Joseph Ismael C. Desalit\n'
+          'Email: josephdesalit628@gmail.com\n'
+          'Contact Number: 0992-621-0697\n\n'
+          'Eliand John N. Penus\n'
+          'Email: meetjhay08@gmail.com\n'
+          'Contact Number: 0960-412-3893\n\n'
+          'Earl Michael B. Perucho\n'
+          'Email: earlmichaelperucho@gmail.com\n'
+          'Contact Number: 0991-580-0564',
     ),
   ];
 }
 
-/// The full notice (route: /privacy). Public: reachable before login.
+/// The full notice (route: /privacy).
+/// Public: reachable before login.
 class PrivacyNoticeScreen extends StatelessWidget {
   const PrivacyNoticeScreen({super.key});
 
@@ -120,23 +174,38 @@ class PrivacyNoticeScreen extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               children: [
                 Text(
-                  'Version ${PrivacyNotice.version} · '
+                  '${PrivacyNotice.organization} · '
+                  'Version ${PrivacyNotice.version}\n'
                   'Effective ${PrivacyNotice.effectiveDate}',
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
-                const SizedBox(height: 12),
-                for (final s in PrivacyNotice.sections) ...[
+                const SizedBox(height: 20),
+
+                for (final section in PrivacyNotice.sections) ...[
                   Text(
-                    s.title,
+                    section.title,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(s.body),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  Text(
+                    section.body,
+                    textAlign: TextAlign.justify,
+                    style: const TextStyle(fontSize: 14, height: 1.6),
+                  ),
+                  const SizedBox(height: 20),
                 ],
+
+                const Divider(),
+                const SizedBox(height: 8),
+                const Text(
+                  'BckSnap Privacy Notice · Version '
+                  '${PrivacyNotice.version}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
               ],
             ),
           ),

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/doctor_schedule.dart';
 import 'auth_service.dart';
@@ -12,11 +13,11 @@ class DoctorScheduleService {
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
     AuthService? authService,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _authService = authService ?? AuthService();
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _auth = auth ?? FirebaseAuth.instance,
+       _authService = authService ?? AuthService();
 
-  /// The selected staff profile ID, NOT the clinic Firebase Auth UID.
+  /// Returns the selected doctor's staff profile ID.
   String get _doctorId {
     if (_auth.currentUser == null) {
       throw Exception('You must be logged in to manage schedules.');
@@ -45,8 +46,7 @@ class DoctorScheduleService {
   }
 
   /// Loads and verifies the selected doctor profile.
-  Future<DocumentSnapshot<Map<String, dynamic>>>
-      _getDoctorAccount() async {
+  Future<DocumentSnapshot<Map<String, dynamic>>> _getDoctorAccount() async {
     final doctorId = _doctorId;
 
     final snapshot = await _firestore
@@ -63,8 +63,6 @@ class DoctorScheduleService {
     if (data['role'] != 'doctor') {
       throw Exception('Only doctor profiles can manage schedules.');
     }
-    return u.profileId ?? u.id;
-  }
 
     if (data['status'] != 'active') {
       throw Exception('Your doctor profile is not active.');
@@ -75,25 +73,31 @@ class DoctorScheduleService {
     if (data['clinicId'] != account.clinicId) {
       throw Exception('Doctor profile does not belong to this clinic.');
     }
-    return id;
+
+    return snapshot;
   }
 
   /// Loads the selected doctor's saved schedule.
   Future<DoctorSchedule?> getMySchedule() async {
+    final doctor = await _getDoctorAccount();
+
     final snapshot = await _firestore
         .collection('doctorSchedules')
-        .doc(doctorId)
+        .doc(doctor.id)
         .get();
+
     if (!snapshot.exists) return null;
+
     return DoctorSchedule.fromMap(snapshot.data()!);
   }
 
   /// Saves or updates the selected doctor's weekly schedule.
   Future<void> saveMySchedule(DoctorSchedule schedule) async {
-    final account = await _getDoctorAccount();
-    final accountData = account.data()!;
+    final doctor = await _getDoctorAccount();
+    final doctorId = doctor.id;
+    final accountData = doctor.data()!;
+
     final clinicId = accountData['clinicId'] as String?;
-    final doctorId = _doctorId;
 
     if (clinicId == null || clinicId.isEmpty) {
       throw Exception('Doctor profile is not assigned to a clinic.');
@@ -107,10 +111,7 @@ class DoctorScheduleService {
       throw Exception('The schedule clinic does not match the doctor profile.');
     }
 
-    await _firestore
-        .collection('doctorSchedules')
-        .doc(doctorId)
-        .set({
+    await _firestore.collection('doctorSchedules').doc(doctorId).set({
       ...schedule.toMap(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
