@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/format.dart';
+import '../../core/presence_badge.dart';
 import '../../models/staff_profile.dart';
 import '../../services/api_client.dart';
+import '../../services/auth_service.dart';
 import '../../services/profile_service.dart';
 import 'add_profile_dialog.dart';
 
@@ -22,10 +27,50 @@ class _DoctorProfilesScreenState extends State<DoctorProfilesScreen> {
   bool _loading = true;
   String? _error;
 
+  // Which doctors are marked "in" (doctor id -> date it was set for).
+  StreamSubscription<Map<String, String>>? _presenceSub;
+  Map<String, String> _presentOn = {};
+  String? _togglingId;
+
+  // Only the receptionist changes the status. Doctors see it read-only.
+  bool get _canToggle => AuthService().currentUser?.role == 'receptionist';
+
   @override
   void initState() {
     super.initState();
     _load();
+    _listenPresence();
+  }
+
+  @override
+  void dispose() {
+    _presenceSub?.cancel();
+    super.dispose();
+  }
+
+  void _listenPresence() {
+    try {
+      _presenceSub = _service.doctorPresenceStream().listen((map) {
+        if (mounted) setState(() => _presentOn = map);
+      }, onError: (_) {});
+    } catch (_) {
+      // No status shown if the stream cannot start; the list still works.
+    }
+  }
+
+  Future<void> _setPresent(StaffProfile d, bool present) async {
+    if (_togglingId != null) return;
+    setState(() => _togglingId = d.id);
+    try {
+      await _service.setDoctorPresent(d, present);
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _togglingId = null);
+    }
   }
 
   Future<void> _load() async {
@@ -36,7 +81,7 @@ class _DoctorProfilesScreenState extends State<DoctorProfilesScreen> {
     try {
       final all = await _service.profiles();
       if (mounted) {
-        setState(() => _doctors = all.where((p) => p.isDoctor).toList());
+        setState(() => _doctors = all);
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -78,7 +123,7 @@ class _DoctorProfilesScreenState extends State<DoctorProfilesScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.person_add_alt_1),
-        label: const Text('Add doctor'),
+        label: const Text('Add staff profile'),
       ),
       body: SafeArea(
         child: Center(
@@ -157,7 +202,28 @@ class _DoctorProfilesScreenState extends State<DoctorProfilesScreen> {
           ].join('\n'),
         ),
         isThreeLine: d.professions.isNotEmpty,
-        trailing: Icon(icon, color: color),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (d.isDoctor && d.isActive) ...[
+              if (_canToggle) ...[
+                Text(
+                  isPresentToday(_presentOn[d.id]) ? 'In' : 'Out',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                Switch(
+                  value: isPresentToday(_presentOn[d.id]),
+                  onChanged: _togglingId == d.id
+                      ? null
+                      : (v) => _setPresent(d, v),
+                ),
+              ] else
+                PresenceBadge(present: isPresentToday(_presentOn[d.id])),
+              const SizedBox(width: 8),
+            ],
+            Icon(icon, color: color),
+          ],
+        ),
       ),
     );
   }

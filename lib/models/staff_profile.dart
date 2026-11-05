@@ -29,10 +29,12 @@ class StaffProfile {
   bool get isActive => status == 'active';
   bool get isPending => status == 'pending';
 
-  String get roleLabel {
-    if (!isDoctor) return 'Receptionist';
-    return professionalType;
-  }
+  String get roleLabel => switch (role) {
+    'doctor' => 'Doctor',
+    'pt' => 'Physical Therapist',
+    'receptionist' => 'Receptionist',
+    _ => role,
+  };
 
   String get statusLabel => switch (status) {
     'active' => 'Active',

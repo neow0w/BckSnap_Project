@@ -118,13 +118,6 @@ class _MessageScreenState extends State<MessageScreen> {
           onPressed: () =>
               context.canPop() ? context.pop() : context.go('/messages'),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh messages',
-            onPressed: _loading ? null : _loadMessages,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
       ),
       body: SafeArea(
         child: Column(

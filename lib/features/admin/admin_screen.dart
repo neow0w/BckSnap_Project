@@ -180,11 +180,6 @@ class _AdminScreenState extends State<AdminScreen> {
                   onPressed: () => context.push('/profile'),
                   icon: const Icon(Icons.person_outline),
                 ),
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _loading ? null : _load,
-                  icon: const Icon(Icons.refresh),
-                ),
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(
@@ -230,9 +225,16 @@ class _AdminScreenState extends State<AdminScreen> {
                         const SizedBox(height: 16),
                         _section(
                           'Receptionist profiles',
-                          'Accept appointment requests, answer patient '
-                              'messages and create doctor profiles.',
-                          others.where((p) => !p.isDoctor).toList(),
+                          'Manage receptionist accounts.',
+                          others
+                              .where((p) => p.role == 'receptionist')
+                              .toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        _section(
+                          'Physical Therapist profiles',
+                          'Manage physical therapist accounts.',
+                          others.where((p) => p.role == 'pt').toList(),
                         ),
                         const SizedBox(height: 16),
                         _section(

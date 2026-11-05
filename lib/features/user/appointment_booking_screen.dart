@@ -321,6 +321,7 @@ class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
                     else
                       DropdownButtonFormField<ClinicDoctor>(
                         initialValue: _doctor,
+                        isExpanded: true,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                           labelText: 'Doctor',
@@ -330,7 +331,8 @@ class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
                             DropdownMenuItem(
                               value: doctor,
                               child: Text(
-                                '${doctor.name ?? 'Doctor'}${doctor.isDemo ? ' — DEMO' : ''}',
+                                '${doctor.name ?? 'Doctor'}${doctor.isDemo ? ' — DEMO' : ' · ${doctor.isPresentToday ? 'In clinic today' : 'Not in today'}'}',
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                         ],

@@ -29,6 +29,11 @@ const _doctorDests = [
   _Dest('My Schedule', Icons.calendar_month_outlined, '/doctor/schedule'),
 ];
 
+const _ptDests = [
+  _Dest('Appointments', Icons.event_note_outlined, '/doctor'),
+  _Dest('Patients', Icons.people_outline, '/doctor/patients'),
+];
+
 /// The website frame for staff: a side menu with the page next to it.
 class StaffWebShell extends StatelessWidget {
   final String location;
@@ -65,11 +70,13 @@ class StaffWebShell extends StatelessWidget {
     final role = user?.role;
     final dests = switch (role) {
       'doctor' => _doctorDests,
+      'pt' => _ptDests,
       'admin' => _adminDests,
       _ => _receptionDests,
     };
     final roleLabel = switch (role) {
       'doctor' => 'Doctor',
+      'pt' => 'Physical Therapist',
       'admin' => 'Administrator',
       _ => 'Receptionist',
     };

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../services/api_client.dart';
 import '../../services/clinic_service.dart';
+import '../../core/presence_badge.dart';
 
 class ClinicDetailsScreen extends StatefulWidget {
   const ClinicDetailsScreen({required this.clinicId, super.key});
@@ -160,6 +161,11 @@ class _ClinicDetailsScreenState extends State<ClinicDetailsScreen> {
                                     title: Text(
                                       doctor.name ?? 'Doctor name unavailable',
                                     ),
+                                    trailing: doctor.isDemo
+                                        ? null
+                                        : PresenceBadge(
+                                            present: doctor.isPresentToday,
+                                          ),
                                     subtitle: Text(
                                       [
                                         if (doctor.specializations.isNotEmpty)

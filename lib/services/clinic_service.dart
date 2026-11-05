@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide GeoPoint;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
+import '../core/format.dart' show isPresentToday;
 import 'api_client.dart';
 import 'auth_service.dart';
 import 'audit_log.dart';
@@ -34,6 +35,7 @@ class ClinicDoctor {
     required this.supportsOnline,
     required this.supportsPhysical,
     this.isDemo = false,
+    this.presentOn,
   });
 
   final String id;
@@ -44,7 +46,8 @@ class ClinicDoctor {
   final bool supportsOnline;
   final bool supportsPhysical;
   final bool isDemo;
-  
+  final String? presentOn;
+  bool get isPresentToday => _isPresentToday(presentOn);
 
   factory ClinicDoctor.fromMap(String id, Map<String, dynamic> m) =>
       ClinicDoctor(
@@ -58,8 +61,11 @@ class ClinicDoctor {
         professionalInfo: m['professionalInfo'] as String?,
         supportsOnline: m['supportsOnline'] as bool? ?? true,
         supportsPhysical: m['supportsPhysical'] as bool? ?? true,
+        presentOn: m['presentOn'] as String?,
       );
 }
+
+bool _isPresentToday(String? presentOn) => isPresentToday(presentOn);
 
 class ClinicDemoAppointmentType {
   const ClinicDemoAppointmentType({
@@ -467,6 +473,12 @@ class ClinicService {
       ],
     );
   });
+
+  Stream<String?> doctorPresentOnStream(String doctorId) => _db
+      .collection('doctors')
+      .doc(doctorId)
+      .snapshots()
+      .map((s) => s.data()?['presentOn'] as String?);
 
   // ---- slots and booking --------------------------------------------------
 
@@ -1134,17 +1146,29 @@ class ClinicService {
   });
 
   /// Admin: the latest audit log entries of the clinic.
+  /// Uses the fast ordered query. If the database index does not exist yet,
+  /// it reads the clinic's entries and sorts them here instead.
   Future<List<Map<String, dynamic>>> auditLogs() => _guard(() async {
-    final snap = await _db
+    final base = _db
         .collection('auditLogs')
-        .where('clinicId', isEqualTo: _me.clinicId)
-        .orderBy('createdAt', descending: true)
-        .limit(300)
-        .get();
-    return [
+        .where('clinicId', isEqualTo: _me.clinicId);
+    QuerySnapshot<Map<String, dynamic>> snap;
+    try {
+      snap = await base.orderBy('createdAt', descending: true).limit(300).get();
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+      snap = await base.get();
+    }
+    final list = [
       for (final d in snap.docs)
         {...d.data(), 'id': d.id, 'createdAt': _dt(d.data()['createdAt'])},
     ];
+    list.sort(
+      (a, b) => ((b['createdAt'] as DateTime?) ?? DateTime(2000)).compareTo(
+        (a['createdAt'] as DateTime?) ?? DateTime(2000),
+      ),
+    );
+    return list.take(300).toList();
   });
   
   // ---- consultation chat -----------------------------------------------

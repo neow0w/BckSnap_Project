@@ -13,7 +13,6 @@ import '../../services/pose_detector.dart';
 import '../../services/screening_draft.dart';
 import 'back_guide.dart';
 import 'guide_checker.dart';
-import 'pose_overlay.dart';
 import 'photo_quality.dart';
 import '../../services/pose_burst.dart';
 
@@ -38,13 +37,13 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   // Pose detection and the live guideline checker
   final BodyPoseDetector _detector = BodyPoseDetector();
   final GuideChecker _checker = GuideChecker();
-  final ValueNotifier<PoseFrame?> _pose = ValueNotifier<PoseFrame?>(null);
   final ValueNotifier<GuideStatus?> _status = ValueNotifier<GuideStatus?>(null);
   String? _detectorError;
   int _lastRunMs = 0;
   final List<PoseFrame> _recent = [];
   final List<GuideStatus> _recentStatus = [];
   PhotoQuality? _quality;
+
   // Capture burst
   PoseBurst? _burst; // set while the burst is being collected
   final ValueNotifier<int> _burstCount = ValueNotifier<int>(0);
@@ -68,7 +67,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     _accelSub?.cancel();
     _controller?.dispose();
     _detector.stop();
-    _pose.dispose();
     _status.dispose();
     _burstCount.dispose();
     super.dispose();
@@ -95,7 +93,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   }
 
   void _clearLive() {
-    _pose.value = null;
     _status.value = null;
     _recent.clear();
     _recentStatus.clear();
@@ -248,7 +245,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
         tilt: _tilt,
         aspect: 1 / c.value.aspectRatio,
       );
-      _pose.value = frame;
       _status.value = status;
       _recent.add(frame);
       _recentStatus.add(status);
@@ -263,31 +259,76 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     }
   }
 
-  String _poseStatus() {
-    final f = _pose.value;
-    if (f == null) return '';
-    if (!f.found) return 'No person detected  (${f.millis} ms)';
-    String s(int i) => ((f.point(i)?.score ?? 0) * 100).round().toString();
-    final t = _tilt;
-    final tilt = t == null
-        ? ''
-        : '   Tilt ${t.rollDeg.toStringAsFixed(0)}/${t.pitchDeg.toStringAsFixed(0)}';
-    final st = _status.value;
-    final facing = st == null
-        ? ''
-        : '\nWidth ${st.widthRatio.toStringAsFixed(2)}   '
-              'Nose ${(st.noseScore * 100).round()}   '
-              'Left shoulder on image ${st.leftOnImageLeft ? "left" : "right"}';
-    return '${f.millis} ms   '
-        'Shoulders ${s(PoseIndex.leftShoulder)}/${s(PoseIndex.rightShoulder)}   '
-        'Hips ${s(PoseIndex.leftHip)}/${s(PoseIndex.rightHip)}$tilt$facing';
-  }
-
   // ---- capture --------------------------------------------------------------
+
+  /// Shown only after the user taps the shutter too early.
+  void _showUnmetRequirements(GuideStatus? status) {
+    final unmet = status?.items.where((item) => !item.ok).toList() ?? [];
+
+    final messages = unmet.map((item) {
+      switch (item.label) {
+        case 'Person':
+          return 'Make sure the patient is visible.';
+        case 'Visible':
+          return 'Make sure the shoulders and hips are clearly visible.';
+        case 'Facing':
+          return 'Ask the patient to face away from the camera.';
+        case 'Distance':
+          return 'Adjust the distance between the patient and camera.';
+        case 'Height':
+          return 'Adjust the patient’s position in the frame.';
+        case 'Centered':
+          return 'Center the patient and keep the whole back in frame.';
+        case 'Level':
+          return 'Hold the phone upright and level.';
+        case 'Still':
+          return 'Ask the patient to hold still.';
+        default:
+          return item.problem ?? item.label;
+      }
+    }).toList();
+
+    if (status == null) {
+      messages.add('Point the camera at the patient’s back.');
+    } else if (status.allOk && !status.ready) {
+      messages.add('Hold still for a moment, then try again.');
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Please complete the requirements'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: messages
+              .map(
+                (message) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('• $message'),
+                ),
+              )
+              .toList(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _capture() async {
     final c = _controller;
     if (c == null || !c.value.isInitialized || _capturing) return;
+
+    final status = _status.value;
+    if (status?.ready != true) {
+      _showUnmetRequirements(status);
+      return;
+    }
     setState(() => _capturing = true);
 
     // Judge the live frames first (before they are cleared).
@@ -452,29 +493,29 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
             const SizedBox(height: 24),
             if (primaryLabel != null)
               FilledButton(onPressed: onPrimary, child: Text(primaryLabel)),
-            TextButton(
-              onPressed: () => context.go('/screening/upload'),
-              child: const Text('Use a photo from the gallery instead'),
-            ),
           ],
         ),
       ),
     );
   }
 
-  Color _guideColor(GuideStatus? st) {
-    if (st == null) return Colors.white;
-    final positionOk = st.items
-        .where((i) => i.label != 'Still')
-        .every((i) => i.ok);
-    return positionOk ? Colors.greenAccent : Colors.white;
-  }
-
   Widget _buildPreview() {
     final c = _controller!;
     return Column(
       children: [
-        _buildCoach(),
+        // Only a real detector failure is shown here, never the requirements.
+        if (_detectorError != null)
+          Container(
+            width: double.infinity,
+            color: Colors.red.shade700,
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              'Pose detector problem: $_detectorError',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
         Expanded(
           child: Center(
             child: AspectRatio(
@@ -483,22 +524,17 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                 fit: StackFit.expand,
                 children: [
                   CameraPreview(c),
+                  // The outline: white until every requirement is met and
+                  // the person is inside the guide, then green.
                   ValueListenableBuilder<GuideStatus?>(
                     valueListenable: _status,
                     builder: (context, st, _) => IgnorePointer(
                       child: CustomPaint(
                         painter: AlignmentOverlayPainter(
-                          color: _guideColor(st),
+                          color: (st?.allOk ?? false)
+                              ? Colors.greenAccent
+                              : Colors.white,
                         ),
-                      ),
-                    ),
-                  ),
-                  RepaintBoundary(
-                    child: IgnorePointer(
-                      child: ValueListenableBuilder<PoseFrame?>(
-                        valueListenable: _pose,
-                        builder: (context, pose, _) =>
-                            CustomPaint(painter: PoseOverlayPainter(pose)),
                       ),
                     ),
                   ),
@@ -517,6 +553,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               child: FilledButton(
                 style: FilledButton.styleFrom(
                   shape: const CircleBorder(),
+                  padding: EdgeInsets.zero,
                   backgroundColor: (st?.ready ?? false) ? Colors.green : null,
                 ),
                 onPressed: _capturing ? null : _capture,
@@ -542,83 +579,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     );
   }
 
-  /// The banner above the preview: what to do next, plus a checklist.
-  Widget _buildCoach() {
-    return ValueListenableBuilder<GuideStatus?>(
-      valueListenable: _status,
-      builder: (context, st, _) {
-        final ready = st?.ready ?? false;
-        final String hint = _detectorError != null
-            ? 'Pose detector problem: $_detectorError'
-            : _capturing
-            ? 'Hold still... capturing'
-            : (st?.hint ?? 'Starting pose detection...');
-
-        return Container(
-          width: double.infinity,
-          color: ready ? Colors.green.shade700 : Colors.black87,
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                hint,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (st != null) ...[
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 4,
-                  children: [for (final item in st.items) _chip(item)],
-                ),
-                if (st.allOk && !st.ready) ...[
-                  const SizedBox(height: 6),
-                  LinearProgressIndicator(value: st.progress),
-                ],
-              ],
-              const SizedBox(height: 4),
-              Text(
-                _poseStatus(),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _chip(CheckItem item) {
-    final color = item.ok ? Colors.greenAccent : Colors.redAccent;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          item.ok ? Icons.check_circle : Icons.cancel,
-          size: 14,
-          color: color,
-        ),
-        const SizedBox(width: 3),
-        Text(
-          item.label,
-          style: const TextStyle(color: Colors.white, fontSize: 12),
-        ),
-      ],
-    );
-  }
-
   Widget _buildReview() {
     final q = _quality;
-    final good = q?.good ?? true; // no pose data (gallery photo) never blocks
+    final good = q?.good ?? false;
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -650,11 +613,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
             OutlinedButton(onPressed: _retake, child: const Text('No, retake')),
           ] else ...[
             FilledButton(onPressed: _retake, child: const Text('Retake photo')),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: _continue,
-              child: const Text('Use this photo anyway'),
-            ),
           ],
         ],
       ),

@@ -22,6 +22,16 @@ String isoDate(DateTime d) =>
     '${d.month.toString().padLeft(2, '0')}-'
     '${d.day.toString().padLeft(2, '0')}';
 
+/// Today's date at the clinic, as "2026-11-05". The clinic works on
+/// Philippine time (UTC+8, no daylight saving), whatever the device clock says.
+String clinicToday() =>
+    isoDate(DateTime.now().toUtc().add(const Duration(hours: 8)));
+
+/// A doctor counts as "in" only when the status was set for today.
+/// Yesterday's status expires by itself.
+bool isPresentToday(String? presentOn) =>
+    presentOn != null && presentOn == clinicToday();
+
 /// "3:05 PM"
 String formatTime(DateTime d) {
   final h = d.hour % 12 == 0 ? 12 : d.hour % 12;

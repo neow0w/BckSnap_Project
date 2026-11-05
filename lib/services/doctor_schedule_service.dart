@@ -1,6 +1,4 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/doctor_schedule.dart';
 import 'auth_service.dart';
@@ -65,6 +63,8 @@ class DoctorScheduleService {
     if (data['role'] != 'doctor') {
       throw Exception('Only doctor profiles can manage schedules.');
     }
+    return u.profileId ?? u.id;
+  }
 
     if (data['status'] != 'active') {
       throw Exception('Your doctor profile is not active.');
@@ -75,21 +75,16 @@ class DoctorScheduleService {
     if (data['clinicId'] != account.clinicId) {
       throw Exception('Doctor profile does not belong to this clinic.');
     }
-
-    return snapshot;
+    return id;
   }
 
   /// Loads the selected doctor's saved schedule.
   Future<DoctorSchedule?> getMySchedule() async {
-    await _getDoctorAccount();
-
     final snapshot = await _firestore
         .collection('doctorSchedules')
-        .doc(_doctorId)
+        .doc(doctorId)
         .get();
-
     if (!snapshot.exists) return null;
-
     return DoctorSchedule.fromMap(snapshot.data()!);
   }
 

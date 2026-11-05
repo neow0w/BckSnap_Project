@@ -70,7 +70,10 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   bool _inFilter(Map<String, dynamic> e) {
     final a = '${e['action'] ?? ''}';
     return switch (_filter) {
-      'staff' => a.startsWith('staff.') || a.startsWith('profile.'),
+      'staff' =>
+        a.startsWith('staff.') ||
+            a.startsWith('profile.') ||
+            a.startsWith('doctor.'),
       'appointment' => a.startsWith('appointment.'),
       'access' => a == 'login' || a.startsWith('screening.'),
       'clinic' => a.startsWith('clinic.'),
@@ -111,13 +114,17 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       'profile.activated' => '$who activated the profile of $target',
       'profile.deactivated' => '$who deactivated the profile of $target',
       'profile.password_reset' => '$who reset the password of $target',
+      'doctor.presence_changed' =>
+        '$who marked $target as ${details == 'in' ? 'in the clinic' : 'out of the clinic'}',
       final other => '$who: $other',
     };
   }
 
   IconData _icon(String action) {
     if (action == 'login') return Icons.login;
-    if (action.startsWith('staff.') || action.startsWith('profile.')) {
+    if (action.startsWith('staff.') ||
+        action.startsWith('profile.') ||
+        action.startsWith('doctor.')) {
       return Icons.badge_outlined;
     }
     if (action.startsWith('appointment.')) return Icons.event_note_outlined;
@@ -146,13 +153,6 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                 onPressed: () =>
                     context.canPop() ? context.pop() : context.go('/admin'),
               ),
-              actions: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _loading ? null : _load,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
             ),
       body: SafeArea(
         child: Center(
@@ -199,26 +199,37 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                   ),
                 Expanded(
                   key: const ValueKey('body'),
-                  child: rows.isEmpty && !_loading
-                      ? const Center(child: Text('No entries to show.'))
-                      : ListView.separated(
-                          padding: const EdgeInsets.all(12),
-                          itemCount: rows.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, i) {
-                            final e = rows[i];
-                            final t = e['createdAt'];
-                            final when = t is DateTime
-                                ? '${formatDate(t)}, ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(t))}'
-                                : '-';
-                            return ListTile(
-                              dense: true,
-                              leading: Icon(_icon('${e['action']}')),
-                              title: Text(_describe(e)),
-                              subtitle: Text('$when   ·   ${e['action']}'),
-                            );
-                          },
-                        ),
+                  child: RefreshIndicator(
+                    onRefresh: _load,
+                    child: rows.isEmpty && !_loading
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 120),
+                              Center(child: Text('No entries to show.')),
+                            ],
+                          )
+                        : ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(12),
+                            itemCount: rows.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, i) {
+                              final e = rows[i];
+                              final t = e['createdAt'];
+                              final when = t is DateTime
+                                  ? '${formatDate(t)}, ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(t))}'
+                                  : '-';
+                              return ListTile(
+                                dense: true,
+                                leading: Icon(_icon('${e['action']}')),
+                                title: Text(_describe(e)),
+                                subtitle: Text('$when   ·   ${e['action']}'),
+                              );
+                            },
+                          ),
+                  ),
                 ),
                 const Padding(
                   padding: EdgeInsets.all(8),

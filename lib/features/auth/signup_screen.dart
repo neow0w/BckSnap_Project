@@ -19,7 +19,11 @@ enum _Step { details, consent, assent }
 class SignUpScreen extends StatefulWidget {
   /// Where to go after sign-up (see authDestination). Null = /home.
   final String? next;
-  const SignUpScreen({super.key, this.next});
+
+  /// true = a Google/Facebook account that still needs a date of birth
+  /// and consent (no password step).
+  final bool social;
+  const SignUpScreen({super.key, this.next, this.social = false});
 
   @override
   State<SignUpScreen> createState() => _SignUpScreenState();
@@ -59,6 +63,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
   int get _totalSteps => _isMinor ? 3 : 2;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.social) {
+      _nameCtrl.text = _auth.pendingSocialName ?? '';
+      _emailCtrl.text = _auth.pendingSocialEmail ?? '';
+    }
+  }
+
+  Future<void> _cancelSocial() async {
+    await _auth.cancelSocialSignUp();
+    if (mounted) context.go('/login');
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
@@ -76,7 +94,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
     if (_loading) return;
     switch (_step) {
       case _Step.details:
-        context.go('/');
+        if (widget.social) {
+          _cancelSocial();
+        } else {
+          context.go('/');
+        }
       case _Step.consent:
         setState(() {
           _step = _Step.details;
@@ -152,20 +174,34 @@ class _SignUpScreenState extends State<SignUpScreen> {
       _error = null;
     });
     try {
-      await _auth.signUp(
-        name: _nameCtrl.text.trim(),
-        email: _emailCtrl.text.trim(),
-        password: _passwordCtrl.text,
-        dateOfBirth: _dob!,
-        privacyVersion: PrivacyNotice.version,
-        guardianName: minor ? _guardianNameCtrl.text.trim() : null,
-        guardianRelationship: minor ? _relationship : null,
-        guardianContact: minor ? _guardianContactCtrl.text.trim() : null,
-        guardianConsent: minor,
-        minorAssent: minor,
-      );
+      if (widget.social) {
+        await _auth.completeSocialSignUp(
+          name: _nameCtrl.text.trim(),
+          dateOfBirth: _dob!,
+          privacyVersion: PrivacyNotice.version,
+          guardianName: minor ? _guardianNameCtrl.text.trim() : null,
+          guardianRelationship: minor ? _relationship : null,
+          guardianContact: minor ? _guardianContactCtrl.text.trim() : null,
+          guardianConsent: minor,
+          minorAssent: minor,
+        );
+      } else {
+        await _auth.signUp(
+          name: _nameCtrl.text.trim(),
+          email: _emailCtrl.text.trim(),
+          password: _passwordCtrl.text,
+          dateOfBirth: _dob!,
+          privacyVersion: PrivacyNotice.version,
+          guardianName: minor ? _guardianNameCtrl.text.trim() : null,
+          guardianRelationship: minor ? _relationship : null,
+          guardianContact: minor ? _guardianContactCtrl.text.trim() : null,
+          guardianConsent: minor,
+          minorAssent: minor,
+        );
+      }
       if (!mounted) return;
-      context.go(authDestination(widget.next)); // Sign-up OK -> connector A
+      // Unconfirmed emails are sent to /verify-email by the router.
+      context.go(authDestination(widget.next));
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -190,7 +226,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sign Up'),
+        title: Text(widget.social ? 'Complete Profile' : 'Sign Up'),
         leading: BackButton(onPressed: _back),
       ),
       body: SafeArea(
@@ -300,12 +336,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // ---- step 1: details ------------------------------------------------------
 
   Widget _buildDetails() {
+    final social = widget.social;
     return Form(
       key: _detailsKey,
       autovalidateMode: AutovalidateMode.onUserInteraction,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (social) ...[
+            Text(
+              'Almost done! Confirm your name and enter your date of birth '
+              'to finish creating your account.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 16),
+          ],
           LabeledField(
             label: 'Full Name',
             hint: 'Juan Dela Cruz',
@@ -317,30 +362,33 @@ class _SignUpScreenState extends State<SignUpScreen> {
             validator: (v) => Validators.name(v, label: 'full name'),
           ),
           const SizedBox(height: 16),
-          LabeledField(
-            label: 'Password',
-            hint: '••••••••••',
-            controller: _passwordCtrl,
-            obscureText: _hidePassword,
-            textInputAction: TextInputAction.next,
-            autofillHints: const [AutofillHints.newPassword],
-            onChanged: (_) => setState(() {}),
-            inputFormatters: [LengthLimitingTextInputFormatter(64)],
-            suffixIcon: IconButton(
-              icon: Icon(
-                _hidePassword ? Icons.visibility_off : Icons.visibility,
+          if (!social) ...[
+            LabeledField(
+              label: 'Password',
+              hint: '••••••••••',
+              controller: _passwordCtrl,
+              obscureText: _hidePassword,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.newPassword],
+              onChanged: (_) => setState(() {}),
+              inputFormatters: [LengthLimitingTextInputFormatter(64)],
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _hidePassword ? Icons.visibility_off : Icons.visibility,
+                ),
+                color: AppColors.hint,
+                onPressed: () => setState(() => _hidePassword = !_hidePassword),
               ),
-              color: AppColors.hint,
-              onPressed: () => setState(() => _hidePassword = !_hidePassword),
+              validator: Validators.password,
             ),
-            validator: Validators.password,
-          ),
-          PasswordRules(password: _passwordCtrl.text),
-          const SizedBox(height: 16),
+            PasswordRules(password: _passwordCtrl.text),
+            const SizedBox(height: 16),
+          ],
           LabeledField(
             label: 'Email',
             hint: 'example@example.com',
             controller: _emailCtrl,
+            readOnly: social,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             autofillHints: const [AutofillHints.email],
@@ -388,21 +436,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
             onPressed: _continueFromDetails,
             child: const Text('CONTINUE'),
           ),
-          const SizedBox(height: 20),
-          const OrDivider(),
-          const SizedBox(height: 12),
-          const SocialSignInRow(),
-          const SizedBox(height: 20),
-          LinkRow(
-            text: 'Already have an account?',
-            linkText: 'Log In',
-            onTap: () => context.go('/login'),
-          ),
+          if (!social) ...[
+            const SizedBox(height: 20),
+            const OrDivider(),
+            const SizedBox(height: 12),
+            const SocialSignInRow(),
+            const SizedBox(height: 20),
+            LinkRow(
+              text: 'Already have an account?',
+              linkText: 'Log In',
+              onTap: () => context.go('/login'),
+            ),
+          ],
         ],
       ),
     );
   }
-
   // ---- step 2 (adults): privacy notice and consent --------------------------
 
   Widget _buildAdultConsent() {
@@ -607,7 +656,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
         ),
         const SizedBox(height: 12),
         OutlinedButton(
-          onPressed: _loading ? null : () => context.go('/'),
+          onPressed: _loading
+              ? null
+              : (widget.social ? _cancelSocial : () => context.go('/')),
           child: const Text("I don't want to join"),
         ),
       ],
