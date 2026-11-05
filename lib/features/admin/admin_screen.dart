@@ -230,9 +230,16 @@ class _AdminScreenState extends State<AdminScreen> {
                         const SizedBox(height: 16),
                         _section(
                           'Receptionist profiles',
-                          'Accept appointment requests, answer patient '
-                              'messages and create doctor profiles.',
-                          others.where((p) => !p.isDoctor).toList(),
+                          'Manage receptionist accounts.',
+                          others
+                              .where((p) => p.role == 'receptionist')
+                              .toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        _section(
+                          'Physical Therapist profiles',
+                          'Manage physical therapist accounts.',
+                          others.where((p) => p.role == 'pt').toList(),
                         ),
                         const SizedBox(height: 16),
                         _section(

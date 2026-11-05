@@ -107,25 +107,6 @@ class AlignmentOverlayPainter extends CustomPainter {
     dot(p(BackGuide.shoulderHalf, 0));
     dot(p(-BackGuide.hipHalf, 1));
     dot(p(BackGuide.hipHalf, 1));
-
-    void label(String text, Offset center) {
-      final tp = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            shadows: const [Shadow(blurRadius: 4, color: Colors.black)],
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
-    }
-
-    label('Shoulders', p(0, 0.13));
-    label('Hips', p(0, 0.88));
   }
 
   // Draws a path as short strokes with gaps between them.

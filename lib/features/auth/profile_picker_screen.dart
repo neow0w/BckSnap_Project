@@ -8,6 +8,7 @@ import '../../models/staff_profile.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/profile_service.dart';
+import '../receptionist/add_profile_dialog.dart';
 
 /// "Who is using BckSnap?" Shown after logging in with the clinic staff
 /// account. Each profile has its own password.
@@ -87,6 +88,13 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
     }
   }
 
+  Future<void> _addProfile() async {
+    final msg = await showAddProfileDialog(context);
+    if (msg == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    _load();
+  }
+
   Future<void> _logout() async {
     await _auth.logout();
     if (mounted) context.go('/');
@@ -148,8 +156,8 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
           ),
         ] else if (_profiles.isEmpty)
           Text(
-            'There are no profiles yet. Ask the clinic administrator to '
-            'create the receptionist profile.',
+            'There are no active profiles yet. Ask the clinic administrator '
+            'to create or approve a staff profile.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           )
@@ -160,6 +168,14 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
             runSpacing: 16,
             children: [for (final p in _profiles) _tile(p)],
           ),
+        const SizedBox(height: 32),
+        Center(
+          child: OutlinedButton.icon(
+            onPressed: _addProfile,
+            icon: const Icon(Icons.person_add_alt_1),
+            label: const Text('Add staff profile'),
+          ),
+        ),
       ],
     );
   }
@@ -184,9 +200,11 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
               radius: 30,
               backgroundColor: AppColors.tonal,
               child: Icon(
-                p.isDoctor
-                    ? Icons.medical_services_outlined
-                    : Icons.support_agent,
+                switch (p.role) {
+                  'doctor' => Icons.medical_services,
+                  'pt' => Icons.accessibility_new,
+                  _ => Icons.support_agent,
+                },
                 size: 30,
                 color: AppColors.primary,
               ),

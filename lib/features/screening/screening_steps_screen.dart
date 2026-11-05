@@ -112,7 +112,6 @@ class _ScreeningStepsScreenState extends State<ScreeningStepsScreen> {
               : 'Step 2 of 2: Scoliometer',
         ),
         leading: BackButton(onPressed: _back),
-        actions: [TextButton(onPressed: _finish, child: const Text('Skip'))],
       ),
       body: SafeArea(
         child: Center(
@@ -125,6 +124,7 @@ class _ScreeningStepsScreenState extends State<ScreeningStepsScreen> {
                   Expanded(
                     child: PageView.builder(
                       controller: _pages,
+                      physics: const NeverScrollableScrollPhysics(),
                       itemCount: _steps.length,
                       onPageChanged: (i) => setState(() => _index = i),
                       itemBuilder: (context, i) {

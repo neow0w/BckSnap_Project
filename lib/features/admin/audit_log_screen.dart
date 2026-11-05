@@ -70,7 +70,10 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   bool _inFilter(Map<String, dynamic> e) {
     final a = '${e['action'] ?? ''}';
     return switch (_filter) {
-      'staff' => a.startsWith('staff.') || a.startsWith('profile.'),
+      'staff' =>
+        a.startsWith('staff.') ||
+            a.startsWith('profile.') ||
+            a.startsWith('doctor.'),
       'appointment' => a.startsWith('appointment.'),
       'access' => a == 'login' || a.startsWith('screening.'),
       'clinic' => a.startsWith('clinic.'),
@@ -111,13 +114,17 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       'profile.activated' => '$who activated the profile of $target',
       'profile.deactivated' => '$who deactivated the profile of $target',
       'profile.password_reset' => '$who reset the password of $target',
+      'doctor.presence_changed' =>
+        '$who marked $target as ${details == 'in' ? 'in the clinic' : 'out of the clinic'}',
       final other => '$who: $other',
     };
   }
 
   IconData _icon(String action) {
     if (action == 'login') return Icons.login;
-    if (action.startsWith('staff.') || action.startsWith('profile.')) {
+    if (action.startsWith('staff.') ||
+        action.startsWith('profile.') ||
+        action.startsWith('doctor.')) {
       return Icons.badge_outlined;
     }
     if (action.startsWith('appointment.')) return Icons.event_note_outlined;

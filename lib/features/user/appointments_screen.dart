@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../services/api_client.dart';
 import '../../services/clinic_service.dart';
+import '../../core/presence_badge.dart';
 
 class AppointmentsScreen extends StatefulWidget {
   const AppointmentsScreen({super.key});
@@ -51,7 +52,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           } else {
             context.go('/home');
           }
-        }
+        },
       ),
       title: const Text('My appointments'),
       actions: [
@@ -125,6 +126,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     },
   );
 
+  bool _showPresence(ClinicAppointment a) =>
+      a.doctorId != null &&
+      !a.isDemo &&
+      (a.status == 'pending' || a.status == 'approved');
+
   Widget _appointmentCard(ClinicAppointment appointment) => Card(
     child: ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -144,6 +150,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           children: [
             if (appointment.doctorName != null)
               Text('Doctor: ${appointment.doctorName}'),
+            if (_showPresence(appointment))
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: DoctorPresenceLive(doctorId: appointment.doctorId!),
+              ),
             Text(
               'Type: ${appointment.mode == 'online'
                   ? (appointment.isDemo ? 'Online — SIMULATED DEMO ONLY' : 'Online')
@@ -289,7 +300,6 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     }
   }
 
-
   Future<void> _joinConsultation() async {
     setState(() {
       _actionLoading = true;
@@ -297,8 +307,7 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     });
 
     try {
-      final credentials =
-          await _service.consultation(widget.appointmentId);
+      final credentials = await _service.consultation(widget.appointmentId);
 
       if (!mounted) return;
 
@@ -318,9 +327,7 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
   }
 
   Future<void> _openConsultationChat() async {
-    await context.push(
-        '/consultation-chat/${widget.appointmentId}',
-    );
+    await context.push('/consultation-chat/${widget.appointmentId}');
   }
 
   @override
@@ -374,6 +381,19 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
                       appointment.reference ?? 'Unavailable',
                     ),
                     _detail('Doctor', appointment.doctorName ?? 'Unavailable'),
+                    if (appointment.doctorId != null &&
+                        !appointment.isDemo &&
+                        (appointment.status == 'pending' ||
+                            appointment.status == 'approved'))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: DoctorPresenceLive(
+                            doctorId: appointment.doctorId!,
+                          ),
+                        ),
+                      ),
                     _detail(
                       'Appointment type',
                       appointment.mode == 'online'

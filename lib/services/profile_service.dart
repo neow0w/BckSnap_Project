@@ -5,6 +5,7 @@ import '../models/staff_profile.dart';
 import 'api_client.dart';
 import 'audit_log.dart';
 import 'auth_service.dart';
+import '../core/format.dart';
 
 /// The doctor and receptionist profiles of a clinic.
 /// staffProfiles/{id}: one profile.
@@ -64,6 +65,48 @@ class ProfileService {
     },
   );
 
+  /// Live map of doctor id -> the date the doctor was marked "in".
+  /// Use [isPresentToday] on the value (an old date means "out").
+  Stream<Map<String, String>> doctorPresenceStream() => _db
+      .collection('doctors')
+      .where('clinicId', isEqualTo: _me.clinicId)
+      .snapshots()
+      .map(
+        (snap) => {
+          for (final d in snap.docs)
+            if (d.data()['presentOn'] is String)
+              d.id: d.data()['presentOn'] as String,
+        },
+      );
+
+  /// Receptionist: mark a doctor as in the clinic today, or as out.
+  /// The status is stored as today's date, so it resets by itself each day.
+  Future<void> setDoctorPresent(StaffProfile p, bool present) =>
+      _guard(() async {
+        if (_me.role != 'receptionist') {
+          throw ApiException(
+            403,
+            "Only the receptionist can change a doctor's status.",
+          );
+        }
+        if (!p.isDoctor || !p.isActive) {
+          throw ApiException(400, 'Only active doctors can be marked in.');
+        }
+        final batch = _db.batch();
+        batch.update(_db.collection('doctors').doc(p.id), {
+          'presentOn': present ? clinicToday() : FieldValue.delete(),
+        });
+        AuditLog.addTo(
+          batch,
+          action: 'doctor.presence_changed',
+          targetType: 'profile',
+          targetId: p.id,
+          targetName: p.name,
+          details: present ? 'in' : 'out',
+        );
+        await batch.commit();
+      });
+
   /// Admin: the clinic's shared staff account, or null if not created yet.
   Future<Map<String, dynamic>?> staffAccount() => _guard(() async {
     final snap = await _db
@@ -81,8 +124,8 @@ class ProfileService {
     };
   });
 
-  /// Admin: any role, active at once. Receptionist: doctor profiles only,
-  /// waiting for the administrator's approval.
+  /// Admin: creates profiles active immediately.
+  /// Other staff: creates doctor, PT, or receptionist profiles pending approval.
   Future<void> createProfile({
     required String name,
     required String role,
@@ -91,22 +134,39 @@ class ProfileService {
   }) => _guard(() async {
     final me = _me;
     final isAdmin = me.role == 'admin';
-    final isReceptionist = me.role == 'receptionist';
-    if (!isAdmin && !isReceptionist) {
-      throw ApiException(403, 'You cannot create profiles.');
+
+    const allowedCreators = {
+      'admin',
+      'clinic_staff',
+      'receptionist',
+      'doctor',
+      'pt',
+    };
+
+    const allowedProfileRoles = {'doctor', 'pt', 'receptionist'};
+
+    if (!allowedCreators.contains(me.role)) {
+      throw ApiException(403, 'Your account cannot create staff profiles.');
     }
-    if (isReceptionist && role != 'doctor') {
-      throw ApiException(403, 'Receptionists can only create doctor profiles.');
+
+    if (!allowedProfileRoles.contains(role)) {
+      throw ApiException(
+        400,
+        'You can only create doctor, physical therapist, or receptionist profiles.',
+      );
     }
+
     final clinicId = me.clinicId as String?;
     if (clinicId == null) {
       throw ApiException(403, 'No clinic is assigned to this account.');
     }
+
     final cleanName = name.trim();
     final status = isAdmin ? 'active' : 'pending';
     final salt = ProfileCrypto.newSalt();
     final ref = _db.collection('staffProfiles').doc();
     final batch = _db.batch();
+
     batch.set(ref, {
       'clinicId': clinicId,
       'name': cleanName,
@@ -119,12 +179,14 @@ class ProfileService {
       'createdByRole': me.role,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
     if (status == 'active' && role == 'doctor') {
       batch.set(
         _db.collection('doctors').doc(ref.id),
         _doctorCard(ref.id, clinicId, cleanName, professions),
       );
     }
+
     AuditLog.addTo(
       batch,
       action: 'profile.created',
@@ -133,6 +195,7 @@ class ProfileService {
       targetName: cleanName,
       details: '$role${status == 'pending' ? ', waiting for approval' : ''}',
     );
+
     await batch.commit();
   });
 

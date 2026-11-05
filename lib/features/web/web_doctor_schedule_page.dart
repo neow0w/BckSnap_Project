@@ -1,7 +1,4 @@
-
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../models/doctor_schedule.dart';
 import '../../services/doctor_schedule_service.dart';
@@ -11,19 +8,16 @@ class WebDoctorSchedulePage extends StatefulWidget {
   const WebDoctorSchedulePage({super.key});
 
   @override
-  State<WebDoctorSchedulePage> createState() =>
-      _WebDoctorSchedulePageState();
+  State<WebDoctorSchedulePage> createState() => _WebDoctorSchedulePageState();
 }
 
-class _WebDoctorSchedulePageState
-    extends State<WebDoctorSchedulePage> {
+class _WebDoctorSchedulePageState extends State<WebDoctorSchedulePage> {
   final DoctorScheduleService _service = DoctorScheduleService();
 
   static const List<String> _days = DoctorSchedule.weekdays;
 
   final Map<String, DoctorDaySchedule> _schedule = {
-    for (final day in _days)
-      day: const DoctorDaySchedule(),
+    for (final day in _days) day: const DoctorDaySchedule(),
   };
 
   bool _loading = true;
@@ -47,8 +41,7 @@ class _WebDoctorSchedulePageState
       if (saved != null) {
         for (final day in _days) {
           _schedule[day] =
-              saved.weeklySchedule[day] ??
-              const DoctorDaySchedule();
+              saved.weeklySchedule[day] ?? const DoctorDaySchedule();
         }
       }
     } catch (e) {
@@ -62,8 +55,7 @@ class _WebDoctorSchedulePageState
 
   int _minutes(String time) {
     final parts = time.split(':');
-    return int.parse(parts[0]) * 60 +
-        int.parse(parts[1]);
+    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
   }
 
   String _formatTime(String value) {
@@ -77,10 +69,7 @@ class _WebDoctorSchedulePageState
     return '$displayHour:${minute.toString().padLeft(2, '0')} $period';
   }
 
-  void _updateDay(
-    String day,
-    DoctorDaySchedule updated,
-  ) {
+  void _updateDay(String day, DoctorDaySchedule updated) {
     setState(() {
       _schedule[day] = updated;
     });
@@ -210,9 +199,8 @@ class _WebDoctorSchedulePageState
     final validationError = _validateSchedule();
 
     if (validationError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(validationError)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(validationError)));
       return;
     }
 
@@ -222,35 +210,13 @@ class _WebDoctorSchedulePageState
     });
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-
-      if (user == null) {
-        throw Exception('You must be logged in.');
-      }
-
-      final account = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      final clinicId =
-          account.data()?['clinicId'] as String?;
-
-      if (clinicId == null || clinicId.isEmpty) {
-        throw Exception(
-          'Your account is not assigned to a clinic.',
-        );
-      }
-
       final schedule = DoctorSchedule(
-        doctorId: user.uid,
-        clinicId: clinicId,
+        doctorId: _service.doctorId,
+        clinicId: _service.clinicId,
         timezone: 'Asia/Manila',
         appointmentDuration: 60,
         breakDuration: 10,
-        weeklySchedule: Map<String, DoctorDaySchedule>.from(
-          _schedule,
-        ),
+        weeklySchedule: Map<String, DoctorDaySchedule>.from(_schedule),
       );
 
       await _service.saveMySchedule(schedule);
@@ -259,9 +225,7 @@ class _WebDoctorSchedulePageState
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Your schedule has been saved successfully!',
-          ),
+          content: Text('Your schedule has been saved successfully!'),
           backgroundColor: Colors.green,
         ),
       );
@@ -303,9 +267,7 @@ class _WebDoctorSchedulePageState
               icon: Icon(icon, size: 18),
               label: Text(
                 _formatTime(value),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -343,9 +305,7 @@ class _WebDoctorSchedulePageState
                 Text(
                   data.enabled ? 'Available' : 'Unavailable',
                   style: TextStyle(
-                    color: data.enabled
-                        ? Colors.green
-                        : Colors.grey,
+                    color: data.enabled ? Colors.green : Colors.grey,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -358,8 +318,7 @@ class _WebDoctorSchedulePageState
                         enabled: value,
                         timeIn: data.timeIn,
                         timeOut: data.timeOut,
-                        lunchBreakEnabled:
-                            data.lunchBreakEnabled,
+                        lunchBreakEnabled: data.lunchBreakEnabled,
                         lunchStart: data.lunchStart,
                         lunchEnd: data.lunchEnd,
                       ),
@@ -410,9 +369,7 @@ class _WebDoctorSchedulePageState
                   Text(
                     data.lunchBreakEnabled ? 'Enabled' : 'Optional',
                     style: TextStyle(
-                      color: data.lunchBreakEnabled
-                          ? Colors.blue
-                          : Colors.grey,
+                      color: data.lunchBreakEnabled ? Colors.blue : Colors.grey,
                       fontSize: 12,
                     ),
                   ),
@@ -463,9 +420,7 @@ class _WebDoctorSchedulePageState
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   'No consultations scheduled for this day.',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade600),
                 ),
               ),
             ],
@@ -478,9 +433,7 @@ class _WebDoctorSchedulePageState
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     return SingleChildScrollView(
@@ -493,8 +446,7 @@ class _WebDoctorSchedulePageState
             children: [
               const WebPageHeader(
                 title: 'My Schedule',
-                subtitle:
-                    'Manage your weekly consultation availability.',
+                subtitle: 'Manage your weekly consultation availability.',
               ),
 
               const SizedBox(height: 24),
@@ -517,36 +469,23 @@ class _WebDoctorSchedulePageState
                       SizedBox(height: 12),
                       Row(
                         children: [
-                          Icon(
-                            Icons.timer_outlined,
-                            color: Colors.blue,
-                          ),
+                          Icon(Icons.timer_outlined, color: Colors.blue),
                           SizedBox(width: 10),
-                          Text(
-                            'Consultation duration: 60 minutes',
-                          ),
+                          Text('Consultation duration: 60 minutes'),
                         ],
                       ),
                       SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(
-                            Icons.coffee_outlined,
-                            color: Colors.blue,
-                          ),
+                          Icon(Icons.coffee_outlined, color: Colors.blue),
                           SizedBox(width: 10),
-                          Text(
-                            'Break between patients: 10 minutes',
-                          ),
+                          Text('Break between patients: 10 minutes'),
                         ],
                       ),
                       SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(
-                            Icons.public,
-                            color: Colors.blue,
-                          ),
+                          Icon(Icons.public, color: Colors.blue),
                           SizedBox(width: 10),
                           Text('Timezone: Asia/Manila'),
                         ],
@@ -560,10 +499,7 @@ class _WebDoctorSchedulePageState
 
               const Text(
                 'Weekly Availability',
-                style: TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 6),
@@ -571,9 +507,7 @@ class _WebDoctorSchedulePageState
               Text(
                 'Enable the days you accept consultations, '
                 'set your working hours, and optionally add a lunch break.',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                ),
+                style: TextStyle(color: Colors.grey.shade600),
               ),
 
               const SizedBox(height: 16),
@@ -582,10 +516,7 @@ class _WebDoctorSchedulePageState
 
               if (_error != null) ...[
                 const SizedBox(height: 10),
-                Text(
-                  _error!,
-                  style: const TextStyle(color: Colors.red),
-                ),
+                Text(_error!, style: const TextStyle(color: Colors.red)),
               ],
 
               const SizedBox(height: 16),
@@ -605,9 +536,7 @@ class _WebDoctorSchedulePageState
                           ),
                         )
                       : const Icon(Icons.save_outlined),
-                  label: Text(
-                    _saving ? 'Saving...' : 'Save Schedule',
-                  ),
+                  label: Text(_saving ? 'Saving...' : 'Save Schedule'),
                 ),
               ),
             ],

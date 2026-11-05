@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide GeoPoint;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
+import '../core/format.dart' show isPresentToday;
 import 'api_client.dart';
 import 'auth_service.dart';
 import 'audit_log.dart';
@@ -33,6 +34,7 @@ class ClinicDoctor {
     required this.supportsOnline,
     required this.supportsPhysical,
     this.isDemo = false,
+    this.presentOn,
   });
 
   final String id;
@@ -43,6 +45,8 @@ class ClinicDoctor {
   final bool supportsOnline;
   final bool supportsPhysical;
   final bool isDemo;
+  final String? presentOn;
+  bool get isPresentToday => _isPresentToday(presentOn);
 
   factory ClinicDoctor.fromMap(String id, Map<String, dynamic> m) =>
       ClinicDoctor(
@@ -56,8 +60,11 @@ class ClinicDoctor {
         professionalInfo: m['professionalInfo'] as String?,
         supportsOnline: m['supportsOnline'] as bool? ?? true,
         supportsPhysical: m['supportsPhysical'] as bool? ?? true,
+        presentOn: m['presentOn'] as String?,
       );
 }
+
+bool _isPresentToday(String? presentOn) => isPresentToday(presentOn);
 
 class ClinicDemoAppointmentType {
   const ClinicDemoAppointmentType({
@@ -461,13 +468,19 @@ class ClinicService {
     );
   });
 
+  Stream<String?> doctorPresentOnStream(String doctorId) => _db
+      .collection('doctors')
+      .doc(doctorId)
+      .snapshots()
+      .map((s) => s.data()?['presentOn'] as String?);
+
   // ---- slots and booking --------------------------------------------------
 
   /// Half-hour slots inside the clinic's operating hours, minus booked ones.
   /// With no hours saved on the clinic, Mon-Fri 09:00-17:00 is used.
 
-/// Generates appointment slots based on the doctor's weekly schedule.
-/// Each consultation lasts 60 minutes, followed by a 10-minute buffer.
+  /// Generates appointment slots based on the doctor's weekly schedule.
+  /// Each consultation lasts 60 minutes, followed by a 10-minute buffer.
 
   /// Generates appointment slots based on the doctor's weekly schedule.
   /// Each consultation lasts 60 minutes, followed by a 10-minute buffer.
@@ -480,149 +493,133 @@ class ClinicService {
     required String doctorId,
     required DateTime date,
     required String mode,
-  }) =>
-      _guard(() async {
-        // Get the doctor's saved weekly schedule.
-        final scheduleSnap = await _db
-            .collection('doctorSchedules')
-            .doc(doctorId)
-            .get();
+  }) => _guard(() async {
+    // Get the doctor's saved weekly schedule.
+    final scheduleSnap = await _db
+        .collection('doctorSchedules')
+        .doc(doctorId)
+        .get();
 
-        if (!scheduleSnap.exists) {
-          return <AppointmentSlot>[];
-        }
+    if (!scheduleSnap.exists) {
+      return <AppointmentSlot>[];
+    }
 
-        final scheduleData = scheduleSnap.data()!;
+    final scheduleData = scheduleSnap.data()!;
 
-        final weeklySchedule = Map<String, dynamic>.from(
-          scheduleData['weeklySchedule'] as Map? ?? {},
-        );
+    final weeklySchedule = Map<String, dynamic>.from(
+      scheduleData['weeklySchedule'] as Map? ?? {},
+    );
 
-        final dayName = _days[date.weekday - 1];
-        final dayData = weeklySchedule[dayName];
+    final dayName = _days[date.weekday - 1];
+    final dayData = weeklySchedule[dayName];
 
-        if (dayData is! Map || dayData['enabled'] != true) {
-          return <AppointmentSlot>[];
-        }
+    if (dayData is! Map || dayData['enabled'] != true) {
+      return <AppointmentSlot>[];
+    }
 
-        final day = Map<String, dynamic>.from(dayData);
+    final day = Map<String, dynamic>.from(dayData);
 
-        final startTime = _at(
-          date,
-          day['timeIn']?.toString() ?? '08:00',
-        );
+    final startTime = _at(date, day['timeIn']?.toString() ?? '08:00');
 
-        final endTime = _at(
-          date,
-          day['timeOut']?.toString() ?? '17:00',
-        );
+    final endTime = _at(date, day['timeOut']?.toString() ?? '17:00');
 
-        // Lunch break.
-        DateTime? lunchStart;
-        DateTime? lunchEnd;
+    // Lunch break.
+    DateTime? lunchStart;
+    DateTime? lunchEnd;
 
-        if (day['lunchBreakEnabled'] == true) {
-          lunchStart = _at(
-            date,
-            day['lunchStart']?.toString() ?? '12:00',
-          );
+    if (day['lunchBreakEnabled'] == true) {
+      lunchStart = _at(date, day['lunchStart']?.toString() ?? '12:00');
 
-          lunchEnd = _at(
-            date,
-            day['lunchEnd']?.toString() ?? '13:00',
-          );
-        }
+      lunchEnd = _at(date, day['lunchEnd']?.toString() ?? '13:00');
+    }
 
-        // Appointment duration and buffer.
-        final appointmentDuration = Duration(
-          minutes: scheduleData['appointmentDuration'] as int? ?? 60,
-        );
+    // Appointment duration and buffer.
+    final appointmentDuration = Duration(
+      minutes: scheduleData['appointmentDuration'] as int? ?? 60,
+    );
 
-        final breakDuration = Duration(
-          minutes: scheduleData['breakDuration'] as int? ?? 10,
-        );
+    final breakDuration = Duration(
+      minutes: scheduleData['breakDuration'] as int? ?? 10,
+    );
 
-        // Retrieve the doctor's existing bookings.
-        final bookedSnap = await _db
-            .collection('bookedSlots')
-            .where('doctorId', isEqualTo: doctorId)
-            .get();
+    // Retrieve the doctor's existing bookings.
+    final bookedSnap = await _db
+        .collection('bookedSlots')
+        .where('doctorId', isEqualTo: doctorId)
+        .get();
 
-        final bookedIntervals = <({DateTime start, DateTime end})>[];
+    final bookedIntervals = <({DateTime start, DateTime end})>[];
 
-        for (final doc in bookedSnap.docs) {
-          final data = doc.data();
+    for (final doc in bookedSnap.docs) {
+      final data = doc.data();
 
-          final bookedStart =
-              (data['startsAt'] as Timestamp).toDate();
+      final bookedStart = (data['startsAt'] as Timestamp).toDate();
 
-          if (bookedStart.year == date.year &&
-              bookedStart.month == date.month &&
-              bookedStart.day == date.day) {
-            bookedIntervals.add((
-              start: bookedStart,
-              end: bookedStart.add(appointmentDuration),
-            ));
+      if (bookedStart.year == date.year &&
+          bookedStart.month == date.month &&
+          bookedStart.day == date.day) {
+        bookedIntervals.add((
+          start: bookedStart,
+          end: bookedStart.add(appointmentDuration),
+        ));
+      }
+    }
+
+    final now = DateTime.now();
+    final slots = <AppointmentSlot>[];
+
+    var current = startTime;
+
+    while (!current.add(appointmentDuration).isAfter(endTime)) {
+      final appointmentEnd = current.add(appointmentDuration);
+
+      // If the appointment overlaps lunch, resume after lunch.
+      if (lunchStart != null &&
+          lunchEnd != null &&
+          current.isBefore(lunchEnd) &&
+          appointmentEnd.isAfter(lunchStart)) {
+        current = lunchEnd;
+        continue;
+      }
+
+      // Check whether this appointment overlaps an existing booking.
+      final overlappingBookings = bookedIntervals.where(
+        (booking) =>
+            current.isBefore(booking.end) &&
+            appointmentEnd.isAfter(booking.start),
+      );
+
+      if (overlappingBookings.isNotEmpty) {
+        // Resume 10 minutes after the latest overlapping booking.
+        DateTime latestEnd = overlappingBookings.first.end;
+
+        for (final booking in overlappingBookings) {
+          if (booking.end.isAfter(latestEnd)) {
+            latestEnd = booking.end;
           }
         }
 
-        final now = DateTime.now();
-        final slots = <AppointmentSlot>[];
+        current = latestEnd.add(breakDuration);
+        continue;
+      }
 
-        var current = startTime;
+      // Only show future appointment slots.
+      if (current.isAfter(now)) {
+        slots.add(
+          AppointmentSlot(
+            startsAt: current,
+            endsAt: appointmentEnd,
+            mode: mode,
+          ),
+        );
+      }
 
-        while (!current.add(appointmentDuration).isAfter(endTime)) {
-          final appointmentEnd = current.add(appointmentDuration);
+      // Normal availability advances by one hour.
+      current = current.add(appointmentDuration);
+    }
 
-          // If the appointment overlaps lunch, resume after lunch.
-          if (lunchStart != null &&
-              lunchEnd != null &&
-              current.isBefore(lunchEnd) &&
-              appointmentEnd.isAfter(lunchStart)) {
-            current = lunchEnd;
-            continue;
-          }
-
-          // Check whether this appointment overlaps an existing booking.
-          final overlappingBookings = bookedIntervals.where(
-            (booking) =>
-                current.isBefore(booking.end) &&
-                appointmentEnd.isAfter(booking.start),
-          );
-
-          if (overlappingBookings.isNotEmpty) {
-            // Resume 10 minutes after the latest overlapping booking.
-            DateTime latestEnd = overlappingBookings.first.end;
-
-            for (final booking in overlappingBookings) {
-              if (booking.end.isAfter(latestEnd)) {
-                latestEnd = booking.end;
-              }
-            }
-
-            current = latestEnd.add(breakDuration);
-            continue;
-          }
-
-          // Only show future appointment slots.
-          if (current.isAfter(now)) {
-            slots.add(
-              AppointmentSlot(
-                startsAt: current,
-                endsAt: appointmentEnd,
-                mode: mode,
-              ),
-            );
-          }
-
-          // Normal availability advances by one hour.
-          current = current.add(appointmentDuration);
-        }
-
-        return slots;
-      });
-
-
+    return slots;
+  });
 
   Future<ClinicAppointment> book({
     required String clinicId,
@@ -760,25 +757,19 @@ class ClinicService {
 
       final response = await http
           .post(
-            Uri.parse(
-              '${BackendConfig.baseUrl}/api/consultation/token',
-            ),
+            Uri.parse('${BackendConfig.baseUrl}/api/consultation/token'),
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $idToken',
             },
-            body: jsonEncode({
-              'appointmentId': id,
-            }),
+            body: jsonEncode({'appointmentId': id}),
           )
           .timeout(const Duration(seconds: 20));
 
       Map<String, dynamic> data = {};
 
       try {
-        final decoded = jsonDecode(
-          utf8.decode(response.bodyBytes),
-        );
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
 
         if (decoded is Map<String, dynamic>) {
           data = decoded;
@@ -787,8 +778,7 @@ class ClinicService {
         // The server did not return valid JSON.
       }
 
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
         throw ApiException(
           response.statusCode,
           (data['error'] as String?) ??
@@ -816,7 +806,6 @@ class ClinicService {
     }
   }
 
-
   /// Doctor: permanently ends the online consultation for both participants.
   /// The backend independently verifies that the caller is the assigned doctor.
   Future<void> endConsultation(String appointmentId) async {
@@ -825,25 +814,19 @@ class ClinicService {
 
       final response = await http
           .post(
-            Uri.parse(
-              '${BackendConfig.baseUrl}/api/consultation/end',
-            ),
+            Uri.parse('${BackendConfig.baseUrl}/api/consultation/end'),
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $idToken',
             },
-            body: jsonEncode({
-              'appointmentId': appointmentId,
-            }),
+            body: jsonEncode({'appointmentId': appointmentId}),
           )
           .timeout(const Duration(seconds: 20));
 
       Map<String, dynamic> data = {};
 
       try {
-        final decoded = jsonDecode(
-          utf8.decode(response.bodyBytes),
-        );
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
         if (decoded is Map<String, dynamic>) {
           data = decoded;
         }
@@ -870,7 +853,7 @@ class ClinicService {
       );
     }
   }
-  
+
   Future<void> startInstantMeeting(String appointmentId) async {
     try {
       final idToken = await _auth.getFirebaseIdToken();
@@ -884,18 +867,14 @@ class ClinicService {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $idToken',
             },
-            body: jsonEncode({
-              'appointmentId': appointmentId,
-            }),
+            body: jsonEncode({'appointmentId': appointmentId}),
           )
           .timeout(const Duration(seconds: 20));
 
       Map<String, dynamic> data = {};
 
       try {
-        final decoded = jsonDecode(
-          utf8.decode(response.bodyBytes),
-        );
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
 
         if (decoded is Map<String, dynamic>) {
           data = decoded;
@@ -904,11 +883,9 @@ class ClinicService {
         // The server did not return valid JSON.
       }
 
-      if (
-        response.statusCode < 200 ||
-        response.statusCode >= 300 ||
-        data['success'] != true
-      ) {
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          data['success'] != true) {
         throw ApiException(
           response.statusCode,
           (data['error'] as String?) ??
@@ -925,7 +902,6 @@ class ClinicService {
       );
     }
   }
-
 
   // ---- notifications ------------------------------------------------------
 
@@ -1102,11 +1078,9 @@ class ClinicService {
         {...d.data(), 'id': d.id, 'createdAt': _dt(d.data()['createdAt'])},
     ];
   });
-    // ---- consultation chat -----------------------------------------------
+  // ---- consultation chat -----------------------------------------------
   /// Streams messages for a specific approved online appointment.
-  Stream<List<ConsultationMessage>> consultationMessages(
-      String appointmentId,
-  ) {
+  Stream<List<ConsultationMessage>> consultationMessages(String appointmentId) {
     return _db
         .collection('appointments')
         .doc(appointmentId)
@@ -1122,8 +1096,8 @@ class ClinicService {
 
   /// Sends a message as the currently logged-in patient or doctor.
   Future<void> sendConsultationMessage(
-      String appointmentId,
-      String text,
+    String appointmentId,
+    String text,
   ) async {
     final user = _me;
     final message = text.trim();

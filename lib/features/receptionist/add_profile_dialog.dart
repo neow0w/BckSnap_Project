@@ -105,7 +105,7 @@ class _AddProfileDialogState extends State<_AddProfileDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_isAdmin ? 'Add profile' : 'Add doctor profile'),
+      title: const Text('Add staff profile'),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -114,32 +114,35 @@ class _AddProfileDialogState extends State<_AddProfileDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_isAdmin) ...[
-                  DropdownButtonFormField<String>(
-                    initialValue: _role,
-                    decoration: const InputDecoration(
-                      labelText: 'Profile role',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'doctor', child: Text('Doctor')),
-                      DropdownMenuItem(
-                        value: 'receptionist',
-                        child: Text('Receptionist'),
-                      ),
-                    ],
-                    onChanged: _saving
-                        ? null
-                        : (v) => setState(() {
-                            _role = v ?? 'doctor';
-                            _professions.clear();
-                          }),
+                DropdownButtonFormField<String>(
+                  initialValue: _role,
+                  decoration: const InputDecoration(
+                    labelText: 'Profile role',
+                    border: OutlineInputBorder(),
                   ),
-                  const SizedBox(height: 12),
-                ] else ...[
+                  items: const [
+                    DropdownMenuItem(value: 'doctor', child: Text('Doctor')),
+                    DropdownMenuItem(
+                      value: 'pt',
+                      child: Text('Physical Therapist'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'receptionist',
+                      child: Text('Receptionist'),
+                    ),
+                  ],
+                  onChanged: _saving
+                      ? null
+                      : (v) => setState(() {
+                          _role = v ?? 'doctor';
+                          _professions.clear();
+                        }),
+                ),
+                const SizedBox(height: 12),
+                if (!_isAdmin) ...[
                   const Text(
-                    'The administrator has to approve this profile before '
-                    'it can be used.',
+                    'This profile will remain pending until an administrator '
+                    'approves it.',
                     style: TextStyle(fontSize: 12),
                   ),
                   const SizedBox(height: 12),
@@ -242,7 +245,7 @@ class _AddProfileDialogState extends State<_AddProfileDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : Text(_isAdmin ? 'Create Profile' : 'Send for approval'),
+              : Text(_isAdmin ? 'Create Profile' : 'Submit for Approval'),
         ),
       ],
     );

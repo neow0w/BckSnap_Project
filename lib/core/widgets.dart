@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 
+import '../services/api_client.dart';
+import '../services/auth_service.dart';
+import 'home_for.dart';
 import 'theme.dart';
 
 /// The BckSnap logo. Shows a simple stand-in until assets/images/logo.png exists.
@@ -199,26 +203,49 @@ class OrDivider extends StatelessWidget {
   }
 }
 
-/// The Google and Facebook buttons. They are not connected yet: tapping one
-/// only shows a message, so nobody thinks sign-in is broken.
-class SocialSignInRow extends StatelessWidget {
+/// The Google and Facebook buttons.
+class SocialSignInRow extends StatefulWidget {
   const SocialSignInRow({super.key});
 
-  void _soon(BuildContext context, String name) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$name sign-in is not available yet.')),
-    );
+  @override
+  State<SocialSignInRow> createState() => _SocialSignInRowState();
+}
+
+class _SocialSignInRowState extends State<SocialSignInRow> {
+  bool _busy = false;
+
+  void _snack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  Widget _circle(
-    BuildContext context,
-    String letter,
-    Color color,
-    String name,
-  ) {
+  Future<void> _run(Future<SocialResult> Function() signIn) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await signIn();
+      if (!mounted) return;
+      switch (result) {
+        case SocialResult.cancelled:
+          break;
+        case SocialResult.needsProfile:
+          context.go('/complete-profile');
+        case SocialResult.signedIn:
+          context.go(homeFor(AuthService().currentUser?.role ?? 'user'));
+      }
+    } on ApiException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('Sign-in failed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _circle(String letter, Color color, VoidCallback onTap) {
     return InkWell(
       customBorder: const CircleBorder(),
-      onTap: () => _soon(context, name),
+      onTap: onTap,
       child: CircleAvatar(
         radius: 20,
         backgroundColor: color,
@@ -236,12 +263,29 @@ class SocialSignInRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_busy) {
+      return const Center(
+        child: SizedBox(
+          height: 40,
+          width: 40,
+          child: CircularProgressIndicator(strokeWidth: 3),
+        ),
+      );
+    }
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _circle(context, 'G', AppColors.google, 'Google'),
+        _circle(
+          'G',
+          AppColors.google,
+          () => _run(AuthService().signInWithGoogle),
+        ),
         const SizedBox(width: 16),
-        _circle(context, 'f', AppColors.facebook, 'Facebook'),
+        _circle(
+          'f',
+          AppColors.facebook,
+          () => _run(AuthService().signInWithFacebook),
+        ),
       ],
     );
   }

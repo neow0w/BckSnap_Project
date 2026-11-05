@@ -2,10 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../../services/api_client.dart';
 import '../../services/clinic_service.dart';
@@ -20,15 +18,11 @@ class ClinicDiscoveryScreen extends StatefulWidget {
 class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
   final ClinicService _service = ClinicService();
   final TextEditingController _query = TextEditingController();
-  final TextEditingController _serviceFilter = TextEditingController();
-  final MapController _mapController = MapController();
   List<ClinicInfo> _clinics = [];
+  final Map<String, String> _allServices = {}; // lower case -> shown name
+  String? _selectedService;
   GeoPoint? _location;
-  ClinicInfo? _selectedClinic;
   String? _mode;
-  bool _showMap = false;
-  bool _mapReady = false;
-  bool _showFilters = false;
   bool _loading = false;
   bool _reloadRequested = false;
   String? _error;
@@ -49,8 +43,6 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
     _query
       ..removeListener(_scheduleSearch)
       ..dispose();
-    _serviceFilter.dispose();
-    _mapController.dispose();
     super.dispose();
   }
 
@@ -76,32 +68,27 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
         query: _query.text,
         location: _location,
         radiusKm: _radiusKm,
-        service: _serviceFilter.text,
+        service: _selectedService,
         mode: _mode,
       );
-      if (!mounted || requestId != _loadRequestId) return;
+
+      if (!mounted) return;
       setState(() {
         _clinics = clinics;
-        if (_selectedClinic != null &&
-            !clinics.any((clinic) => clinic.id == _selectedClinic!.id)) {
-          _selectedClinic = null;
+        for (final c in clinics) {
+          for (final s in c.services) {
+            final name = s.trim();
+            if (name.isNotEmpty) {
+              _allServices.putIfAbsent(name.toLowerCase(), () => name);
+            }
+          }
         }
       });
-      if (_mapReady) {
-        final mapped = clinics.where((clinic) => clinic.hasMapLocation);
-        if (mapped.isNotEmpty) _focusMap(mapped.first);
-      }
     } on ApiException catch (error) {
       if (kDebugMode) {
         debugPrint('Clinic discovery failed (${error.statusCode}).');
       }
-      if (mounted && requestId == _loadRequestId) {
-        setState(() {
-          _clinics = [];
-          _selectedClinic = null;
-          _error = error.message;
-        });
-      }
+      if (mounted) setState(() => _error = error.message);
     } finally {
       if (mounted && requestId == _loadRequestId) {
         setState(() => _loading = false);
@@ -338,114 +325,136 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
       ..showSnackBar(SnackBar(content: Text(message), action: action));
   }
 
-  void _focusMap(ClinicInfo clinic) {
-    if (!clinic.hasMapLocation || !_mapReady) return;
-    _mapController.move(LatLng(clinic.latitude!, clinic.longitude!), 12);
-  }
-
   void _openClinic(ClinicInfo clinic) =>
       context.push('/clinics/${clinic.id}', extra: clinic);
-  bool get _hasFilters =>
-      _location != null ||
-      _serviceFilter.text.trim().isNotEmpty ||
-      _mode != null;
 
   Widget _filtersPanel() {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 240),
-      child: SingleChildScrollView(
-        child: Column(
+    final services = _allServices.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _requestLocation,
-                  icon: const Icon(Icons.my_location),
-                  label: const Text('Use my location'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _searchLocation,
-                  icon: const Icon(Icons.place_outlined),
-                  label: const Text('Search location'),
-                ),
-                if (_location != null)
-                  InputChip(
-                    avatar: const Icon(Icons.place, size: 18),
-                    label: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 220),
-                      child: Text(
-                        _location!.label,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    onDeleted: () {
-                      setState(() => _location = null);
-                      _load();
-                    },
-                  ),
-                SizedBox(
-                  width: 180,
-                  child: TextField(
-                    controller: _serviceFilter,
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _load(),
-                    decoration: InputDecoration(
-                      labelText: 'Medical service',
-                      isDense: true,
-                      suffixIcon: IconButton(
-                        tooltip: 'Apply service filter',
-                        onPressed: _load,
-                        icon: const Icon(Icons.filter_alt),
-                      ),
-                    ),
-                  ),
-                ),
-                DropdownButton<String?>(
-                  value: _mode,
-                  hint: const Text('Any visit type'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: null,
-                      child: Text('Any visit type'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'physical',
-                      child: Text('In person'),
-                    ),
-                    DropdownMenuItem(value: 'online', child: Text('Online')),
-                  ],
-                  onChanged: (mode) {
-                    setState(() => _mode = mode);
-                    _load();
-                  },
-                ),
-              ],
+            OutlinedButton.icon(
+              onPressed: _requestLocation,
+              icon: const Icon(Icons.my_location),
+              label: const Text('Use my location'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _searchLocation,
+              icon: const Icon(Icons.place_outlined),
+              label: const Text('Search location'),
             ),
             if (_location != null)
-              Row(
-                children: [
-                  const Text('Search radius'),
-                  Expanded(
-                    child: Slider(
-                      value: _radiusKm,
-                      min: 5,
-                      max: 100,
-                      divisions: 19,
-                      label: '${_radiusKm.round()} km',
-                      onChanged: (value) => setState(() => _radiusKm = value),
-                      onChangeEnd: (_) => _load(),
-                    ),
+              InputChip(
+                avatar: const Icon(Icons.place, size: 18),
+                label: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
+                  child: Text(
+                    _location!.label,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  Text('${_radiusKm.round()} km'),
-                ],
+                ),
+                onDeleted: () {
+                  setState(() => _location = null);
+                  _load();
+                },
               ),
           ],
         ),
-      ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Medical service',
+                  isDense: true,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String?>(
+                    value: _selectedService,
+                    isExpanded: true,
+                    isDense: true,
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Any service'),
+                      ),
+                      for (final s in services)
+                        DropdownMenuItem<String?>(
+                          value: s,
+                          child: Text(s, overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (service) {
+                      setState(() => _selectedService = service);
+                      _load();
+                    },
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Visit type',
+                  isDense: true,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String?>(
+                    value: _mode,
+                    isExpanded: true,
+                    isDense: true,
+                    items: const [
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Any visit type'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'physical',
+                        child: Text('In person'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'online',
+                        child: Text('Online'),
+                      ),
+                    ],
+                    onChanged: (mode) {
+                      setState(() => _mode = mode);
+                      _load();
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_location != null)
+          Row(
+            children: [
+              const Text('Search radius'),
+              Expanded(
+                child: Slider(
+                  value: _radiusKm,
+                  min: 5,
+                  max: 100,
+                  divisions: 19,
+                  label: '${_radiusKm.round()} km',
+                  onChanged: (value) => setState(() => _radiusKm = value),
+                  onChangeEnd: (_) => _load(),
+                ),
+              ),
+              Text('${_radiusKm.round()} km'),
+            ],
+          ),
+      ],
     );
   }
 
@@ -473,78 +482,37 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
             constraints: const BoxConstraints(maxWidth: 1100),
             child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: _query,
-                        textInputAction: TextInputAction.search,
-                        onSubmitted: (_) => _load(),
-                        decoration: InputDecoration(
-                          labelText: 'Clinic name',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: IconButton(
-                            tooltip: 'Search',
-                            onPressed: _load,
-                            icon: const Icon(Icons.arrow_forward),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: _query,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) => _load(),
+                          decoration: InputDecoration(
+                            labelText: 'Clinic name',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: IconButton(
+                              tooltip: 'Search',
+                              onPressed: _load,
+                              icon: const Icon(Icons.arrow_forward),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SegmentedButton<bool>(
-                              showSelectedIcon: false,
-                              segments: const [
-                                ButtonSegment(
-                                  value: false,
-                                  icon: Icon(Icons.view_list),
-                                  label: Text('List'),
-                                ),
-                                ButtonSegment(
-                                  value: true,
-                                  icon: Icon(Icons.map_outlined),
-                                  label: Text('Map'),
-                                ),
-                              ],
-                              selected: {_showMap},
-                              onSelectionChanged: (value) {
-                                setState(() {
-                                  _showMap = value.first;
-                                  _mapReady = false;
-                                });
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Badge(
-                            smallSize: 10,
-                            isLabelVisible: _hasFilters,
-                            child: IconButton.filledTonal(
-                              tooltip: 'Filters',
-                              onPressed: () =>
-                                  setState(() => _showFilters = !_showFilters),
-                              icon: Icon(
-                                _showFilters ? Icons.expand_less : Icons.tune,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (_showFilters) _filtersPanel(),
-                    ],
+                        const SizedBox(height: 12),
+                        _filtersPanel(),
+                      ],
+                    ),
                   ),
                 ),
                 if (_loading) const LinearProgressIndicator(),
                 Expanded(
                   key: const ValueKey('body'),
-                  child: _error != null
-                      ? _buildErrorState()
-                      : _showMap
-                      ? _buildMap()
-                      : _buildList(),
+                  child: _error != null ? _buildErrorState() : _buildList(),
                 ),
               ],
             ),
@@ -572,118 +540,6 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
         separatorBuilder: (_, _) => const SizedBox(height: 8),
         itemBuilder: (context, index) => _clinicCard(_clinics[index]),
       ),
-    );
-  }
-
-  Widget _buildMap() {
-    if (_loading && _clinics.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_clinics.isEmpty) {
-      return _emptyState(
-        'No clinics found',
-        'There are no clinics matching these search filters. Try another name, service, or location.',
-      );
-    }
-    final mapped = _clinics.where((clinic) => clinic.hasMapLocation).toList();
-    if (mapped.isEmpty) {
-      final missingCoordinates = _clinics.length;
-      return _emptyState(
-        'Clinics found, but none can be mapped',
-        '$missingCoordinates ${missingCoordinates == 1 ? 'clinic has' : 'clinics have'} missing or invalid coordinates. Switch to List to view clinic details.',
-        action: OutlinedButton.icon(
-          onPressed: () => setState(() => _showMap = false),
-          icon: const Icon(Icons.view_list),
-          label: const Text('View clinic list'),
-        ),
-      );
-    }
-    final initial = _location != null
-        ? LatLng(_location!.latitude, _location!.longitude)
-        : LatLng(mapped.first.latitude!, mapped.first.longitude!);
-    return Column(
-      children: [
-        Expanded(
-          child: FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: initial,
-              initialZoom: _location == null ? 11 : 10,
-              minZoom: 4,
-              maxZoom: 18,
-              cameraConstraint: CameraConstraint.contain(
-                bounds: LatLngBounds(
-                  const LatLng(-85, -180),
-                  const LatLng(85, 180),
-                ),
-              ),
-              onMapReady: () {
-                _mapReady = true;
-                _focusMap(_selectedClinic ?? mapped.first);
-              },
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.flutter_bcksnap',
-              ),
-              MarkerLayer(
-                markers: [
-                  for (final clinic in mapped)
-                    Marker(
-                      point: LatLng(clinic.latitude!, clinic.longitude!),
-                      width: 44,
-                      height: 44,
-                      child: IconButton(
-                        tooltip: clinic.name,
-                        onPressed: () {
-                          setState(() => _selectedClinic = clinic);
-                          _focusMap(clinic);
-                        },
-                        icon: Icon(
-                          Icons.location_on,
-                          color: _selectedClinic?.id == clinic.id
-                              ? Theme.of(context).colorScheme.tertiary
-                              : Theme.of(context).colorScheme.primary,
-                          size: 38,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              RichAttributionWidget(
-                attributions: [
-                  TextSourceAttribution(
-                    '© OpenStreetMap contributors',
-                    onTap: () {},
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        if (_selectedClinic != null)
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: _clinicCard(_selectedClinic!),
-          ),
-        if (mapped.length < _clinics.length)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Text(
-              '${_clinics.length - mapped.length} clinic(s) omitted from the map because coordinates are missing or invalid.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            'Map data © OpenStreetMap contributors',
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
-        ),
-      ],
     );
   }
 

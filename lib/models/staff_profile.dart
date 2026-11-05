@@ -2,7 +2,7 @@ class StaffProfile {
   final String id;
   final String clinicId;
   final String name;
-  final String role; // receptionist / doctor
+  final String role; // receptionist / doctor / pt
   final String status; // active / pending / rejected / inactive
   final List<String> professions;
   final String salt;
@@ -27,7 +27,12 @@ class StaffProfile {
   bool get isActive => status == 'active';
   bool get isPending => status == 'pending';
 
-  String get roleLabel => isDoctor ? 'Doctor' : 'Receptionist';
+  String get roleLabel => switch (role) {
+    'doctor' => 'Doctor',
+    'pt' => 'Physical Therapist',
+    'receptionist' => 'Receptionist',
+    _ => role,
+  };
 
   String get statusLabel => switch (status) {
     'active' => 'Active',

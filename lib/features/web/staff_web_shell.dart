@@ -64,12 +64,16 @@ class StaffWebShell extends StatelessWidget {
     final user = AuthService().currentUser;
     final role = user?.role;
     final dests = switch (role) {
-      'doctor' => _doctorDests,
+      'doctor' => [
+        ..._doctorDests,
+        const _Dest('Staff Profiles', Icons.badge_outlined, '/reception/staff'),
+      ],
       'admin' => _adminDests,
       _ => _receptionDests,
     };
     final roleLabel = switch (role) {
       'doctor' => 'Doctor',
+      'pt' => 'Physical Therapist',
       'admin' => 'Administrator',
       _ => 'Receptionist',
     };
