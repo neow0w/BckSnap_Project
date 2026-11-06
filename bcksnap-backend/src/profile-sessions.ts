@@ -59,7 +59,7 @@ export class ProfileSessions extends DurableObject {
             !data.profileId ||
             typeof data.clinicId !== "string" ||
             !data.clinicId ||
-            (data.role !== "doctor" && data.role !== "receptionist") ||
+            (data.role !== "doctor" && data.role !== "receptionist" && data.role !== "pt") ||
             typeof data.expiresAt !== "number" ||
             !Number.isFinite(data.expiresAt) ||
             data.expiresAt <= Date.now() ||
@@ -95,7 +95,7 @@ export class ProfileSessions extends DurableObject {
             typeof data.sessionId !== "string" ||
             typeof data.profileId !== "string" ||
             typeof data.clinicId !== "string" ||
-            (data.role !== "doctor" && data.role !== "receptionist") ||
+            (data.role !== "doctor" && data.role !== "receptionist" && data.role !== "pt") ||
             activeSession.sessionId !== data.sessionId ||
             activeSession.profileId !== data.profileId ||
             activeSession.clinicId !== data.clinicId ||

@@ -159,13 +159,6 @@ async function hashProfilePassword(
 
   return encodeBase64Url(bytes);
 }
-const testSalt = "test-salt";
-const testPassword = "test123";
-
-console.log(
-  "TEST HASH:",
-  await hashProfilePassword(testSalt, testPassword)
-);
 
 async function verifyProfilePassword(
   salt: string,
@@ -484,7 +477,7 @@ async function handleProfileSession(
     if (
       profileClinicId !== clinicId ||
       status !== "active" ||
-      (role !== "doctor" && role !== "receptionist")
+      (role !== "doctor" && role !== "receptionist" && role !== "pt")
     ) {
       return Response.json(
         { error: "This profile is not available." },
@@ -617,7 +610,7 @@ async function handleProfileSessionValidation(
       typeof clinicId !== "string" ||
       typeof role !== "string" ||
       typeof sessionId !== "string" ||
-      !["doctor", "receptionist"].includes(role)
+      !["doctor", "receptionist", "pt"].includes(role)
     ) {
       return Response.json(
         { error: "Invalid profile session." },

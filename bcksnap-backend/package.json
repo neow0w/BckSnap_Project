@@ -17,7 +17,7 @@
     "wrangler": "^4.156.0"
   },
   "dependencies": {
-    "jose": "^6.2.14",
+    "jose": "^6.2.15",
     "livekit-server-sdk": "^2.19.2"
   },
   "allowScripts": {
