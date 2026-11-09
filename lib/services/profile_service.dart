@@ -21,6 +21,14 @@ class ProfileService {
     return u;
   }
 
+  String _providerType(StaffProfile p) {
+    if (p.role == 'pt') {
+      return 'Physical Therapist';
+    }
+
+    return p.professionalType;
+  }
+
   Future<T> _guard<T>(Future<T> Function() run) async {
     try {
       return await run();
@@ -179,9 +187,13 @@ class ProfileService {
       'clinicId': clinicId,
       'name': cleanName,
       'role': role,
-      'professionalType': role == 'doctor' ? professionalType : null,
+      'professionalType': role == 'pt'
+          ? 'Physical Therapist'
+          : professionalType,
       'status': status,
-      'professions': role == 'doctor' ? professions : <String>[],
+      'professions': (role == 'doctor' || role == 'pt')
+          ? professions
+          : <String>[],
       'passwordSalt': salt,
       'passwordHash': ProfileCrypto.hash(salt, password),
       'createdByName': me.displayName,
@@ -189,10 +201,13 @@ class ProfileService {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    if (status == 'active' && role == 'doctor') {
+    if (status == 'active' && (role == 'doctor' || role == 'pt')) {
+      final providerType = role == 'pt'
+          ? 'Physical Therapist'
+          : professionalType;
       batch.set(
         _db.collection('doctors').doc(ref.id),
-        _doctorCard(ref.id, clinicId, cleanName,professionalType, professions),
+        _doctorCard(ref.id, clinicId, cleanName, providerType, professions),
       );
     }
 
@@ -218,10 +233,16 @@ class ProfileService {
           'reviewedBy': _me.id,
           'reviewedAt': FieldValue.serverTimestamp(),
         });
-        if (approve && p.isDoctor) {
+        if (approve && (p.role == 'doctor' || p.role == 'pt')) {
           batch.set(
             _db.collection('doctors').doc(p.id),
-            _doctorCard(p.id, p.clinicId, p.name, p.professionalType, p.professions),
+            _doctorCard(
+              p.id,
+              p.clinicId,
+              p.name,
+              _providerType(p),
+              p.professions,
+            ),
           );
         }
         AuditLog.addTo(
@@ -241,13 +262,25 @@ class ProfileService {
     final batch = _db.batch();
     batch.update(_db.collection('staffProfiles').doc(p.id), {
       'status': active ? 'active' : 'inactive',
+      if (p.role == 'pt') 'professionalType': 'Physical Therapist',
     });
     // A doctor is only bookable by patients while active.
-    if (p.isDoctor) {
+    if (p.role == 'doctor' || p.role == 'pt') {
       batch.set(_db.collection('doctors').doc(p.id), {
-        ..._doctorCard(p.id, p.clinicId, p.name, p.professionalType, p.professions),
+        ..._doctorCard(
+          p.id,
+          p.clinicId,
+          p.name,
+          _providerType(p),
+          p.professions,
+        ),
         'active': active,
       }, SetOptions(merge: true));
+    }
+    if (p.role == 'pt') {
+      batch.update(_db.collection('staffProfiles').doc(p.id), {
+        'professionalType': 'Physical Therapist',
+      });
     }
     AuditLog.addTo(
       batch,

@@ -67,6 +67,7 @@ const _protected = [
   '/admin',
   '/reception',
   '/doctor',
+  '/pt',
   '/profile',
   '/screening',
   '/progress',
@@ -90,8 +91,10 @@ bool _roleAllowed(String role, String loc) {
       return _under(loc, '/admin');
     case 'doctor':
     case 'pt':
-      // Doctors and PTs cannot access receptionist pages.
+      // Doctors and PTs share the existing staff appointment pages.
+      // PTs additionally use their own /pt/schedule route.
       return _under(loc, '/doctor') ||
+          _under(loc, '/pt') ||
           _under(loc, '/consultation') ||
           _under(loc, '/consultation-chat');
 
@@ -232,6 +235,10 @@ final List<RouteBase> _webRoutes = [
       ),
       GoRoute(
         path: '/doctor/schedule',
+        builder: (c, s) => const WebDoctorSchedulePage(),
+      ),
+      GoRoute(
+        path: '/pt/schedule',
         builder: (c, s) => const WebDoctorSchedulePage(),
       ),
     ],

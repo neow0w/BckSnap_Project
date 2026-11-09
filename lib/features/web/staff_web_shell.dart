@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
 
+import 'staff_notification_bell.dart';
+
 class _Dest {
   final String label;
   final IconData icon;
@@ -32,6 +34,7 @@ const _doctorDests = [
 const _ptDests = [
   _Dest('Appointments', Icons.event_note_outlined, '/doctor'),
   _Dest('Patients', Icons.people_outline, '/doctor/patients'),
+  _Dest('My Schedule', Icons.calendar_month_outlined, '/pt/schedule'),
 ];
 
 /// The website frame for staff: a side menu with the page next to it.
@@ -89,6 +92,8 @@ class StaffWebShell extends StatelessWidget {
             appBar: AppBar(
               title: Text(dests[index].label),
               actions: [
+                const StaffNotificationBell(),
+
                 if (AuthService().isStaffAccount)
                   IconButton(
                     tooltip: 'Switch profile',
@@ -185,6 +190,8 @@ class StaffWebShell extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          const StaffNotificationBell(),
+                          
                           if (extended && user != null)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),

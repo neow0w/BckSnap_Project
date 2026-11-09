@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide GeoPoint;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:http/http.dart' as http;
 
 import '../core/format.dart' show isPresentToday;
@@ -11,6 +11,7 @@ import 'auth_service.dart';
 import 'audit_log.dart';
 import '../config/backend_config.dart';
 import '../models/consultation_message.dart';
+
 import 'dart:typed_data';
 
 class GeoPoint {
@@ -34,6 +35,8 @@ class ClinicDoctor {
     required this.professionalInfo,
     required this.supportsOnline,
     required this.supportsPhysical,
+    this.professionalType,
+    this.requiresReferral = false,
     this.isDemo = false,
     this.presentOn,
   });
@@ -45,6 +48,8 @@ class ClinicDoctor {
   final String? professionalInfo;
   final bool supportsOnline;
   final bool supportsPhysical;
+  final String? professionalType;
+  final bool requiresReferral;
   final bool isDemo;
   final String? presentOn;
   bool get isPresentToday => _isPresentToday(presentOn);
@@ -59,6 +64,8 @@ class ClinicDoctor {
             s.toString(),
         ],
         professionalInfo: m['professionalInfo'] as String?,
+        professionalType: m['professionalType'] as String?,
+        requiresReferral: m['requiresReferral'] as bool? ?? false,
         supportsOnline: m['supportsOnline'] as bool? ?? true,
         supportsPhysical: m['supportsPhysical'] as bool? ?? true,
         presentOn: m['presentOn'] as String?,
@@ -678,8 +685,7 @@ class ClinicService {
       'cancellationReason': null,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
-      if (referralImageBytes != null)
-        'referralImage': Blob(referralImageBytes),
+      if (referralImageBytes != null) 'referralImage': Blob(referralImageBytes),
     });
     try {
       await batch.commit();
@@ -693,6 +699,41 @@ class ClinicService {
       rethrow;
     }
     final saved = await ref.get();
+
+    // Notify clinic staff about the successful booking.
+    // Notify clinic staff about the successful booking.
+    try {
+      debugPrint('[BOOKING NOTIFICATION] Appointment saved: ${ref.id}');
+
+      debugPrint('[BOOKING NOTIFICATION] Requesting Firebase ID token...');
+      final token = await _auth.getFirebaseIdToken();
+
+      debugPrint('[BOOKING NOTIFICATION] Firebase ID token obtained.');
+
+      final url = '${BackendConfig.baseUrl}/api/appointments/notify-booking';
+
+      debugPrint('[BOOKING NOTIFICATION] Sending request to: $url');
+
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'appointmentId': ref.id}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      debugPrint(
+        '[BOOKING NOTIFICATION] Response: '
+        '${response.statusCode} ${response.body}',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[BOOKING NOTIFICATION] FAILED: $error');
+      debugPrint('[BOOKING NOTIFICATION] STACK TRACE: $stackTrace');
+    }
+
     return _appt(saved.id, saved.data()!);
   });
 
@@ -762,8 +803,8 @@ class ClinicService {
     }
 
     try {
-      final authToken = _auth.profileSessionToken ??
-        await _auth.getFirebaseIdToken();
+      final authToken =
+          _auth.profileSessionToken ?? await _auth.getFirebaseIdToken();
 
       final response = await http
           .post(
@@ -1170,7 +1211,7 @@ class ClinicService {
     );
     return list.take(300).toList();
   });
-  
+
   // ---- consultation chat -----------------------------------------------
 
   /// Retrieves messages through the backend using the patient's or
@@ -1184,17 +1225,17 @@ class ClinicService {
 
       final uri = Uri.parse(
         '${BackendConfig.baseUrl}/api/consultation/messages',
-      ).replace(
-        queryParameters: {'appointmentId': appointmentId},
-      );
+      ).replace(queryParameters: {'appointmentId': appointmentId});
 
-      final response = await http.get(
-        uri,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Accept': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 20));
+      final response = await http
+          .get(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $authToken',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 20));
 
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
 
@@ -1260,19 +1301,16 @@ class ClinicService {
       final authToken =
           _auth.profileSessionToken ?? await _auth.getFirebaseIdToken();
 
-      final response = await http.post(
-        Uri.parse(
-          '${BackendConfig.baseUrl}/api/consultation/messages',
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({
-          'appointmentId': appointmentId,
-          'text': message,
-        }),
-      ).timeout(const Duration(seconds: 20));
+      final response = await http
+          .post(
+            Uri.parse('${BackendConfig.baseUrl}/api/consultation/messages'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+            body: jsonEncode({'appointmentId': appointmentId, 'text': message}),
+          )
+          .timeout(const Duration(seconds: 20));
 
       Map<String, dynamic> data = {};
 

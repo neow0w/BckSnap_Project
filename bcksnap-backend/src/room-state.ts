@@ -14,7 +14,7 @@ interface RoomUpdate {
 }
 
 interface RoomSetup {
-    roomName: string;
+  roomName: string;
 }
 
 const INACTIVITY_PERIOD = 30 * 60 * 1000;
@@ -61,73 +61,107 @@ export class RoomState extends DurableObject<Env> {
       request.method === "GET" &&
       new URL(request.url).pathname === "/status"
     ) {
+      const roomClosed =
+        (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
+
+      const instantMeetingEnabled =
+        (await this.ctx.storage.get<boolean>("instantMeetingEnabled")) ?? false;
+
+      return Response.json({
+        roomClosed,
+        instantMeetingEnabled,
+      });
+    }
+
+
+    if (
+      request.method === "POST" &&
+      new URL(request.url).pathname === "/ensure-room"
+    ) {
+      let setup: RoomSetup;
+
+      try {
+        setup = await request.json<RoomSetup>();
+      } catch {
+        return Response.json(
+          { error: "Invalid room setup" },
+          { status: 400 }
+        );
+      }
+
+      if (
+        typeof setup.roomName !== "string" ||
+        !setup.roomName.trim()
+      ) {
+        return Response.json(
+          { error: "Invalid room name" },
+          { status: 400 }
+        );
+      }
+
+      return this.runExclusive(async () => {
         const roomClosed =
           (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
 
-        const instantMeetingEnabled =
-          (await this.ctx.storage.get<boolean>("instantMeetingEnabled")) ?? false;
+        const existingRoomName =
+          await this.ctx.storage.get<string>("roomName");
+
+        if (
+          existingRoomName &&
+          existingRoomName !== setup.roomName
+        ) {
+          return Response.json(
+            { error: "Room name mismatch" },
+            { status: 409 }
+          );
+        }
+
+        let existingRooms =
+          await this.roomService.listRooms([setup.roomName]);
+
+        if (roomClosed) {
+          // Recreate the room after the previous meeting was ended.
+          if (existingRooms.length > 0) {
+            await this.roomService.deleteRoom(setup.roomName);
+          }
+
+          await this.roomService.createRoom({
+            name: setup.roomName,
+            maxParticipants: 2,
+            emptyTimeout: 1800,
+          });
+
+          // Reset the previous meeting's state.
+          await this.ctx.storage.put("roomClosed", false);
+          await this.ctx.storage.put("instantMeetingEnabled", false);
+
+          await this.ctx.storage.delete("participantCount");
+          await this.ctx.storage.delete("processedEvents");
+          await this.ctx.storage.delete("closeDeadline");
+          await this.ctx.storage.deleteAlarm();
+
+          existingRooms = [];
+        } else if (existingRooms.length === 0) {
+          // Create the room if it does not exist yet.
+          await this.roomService.createRoom({
+            name: setup.roomName,
+            maxParticipants: 2,
+            emptyTimeout: 1800,
+          });
+        }
+
+        await this.ctx.storage.put("roomName", setup.roomName);
 
         return Response.json({
-          roomClosed,
-          instantMeetingEnabled,
+          success: true,
+          roomName: setup.roomName,
+          created: existingRooms.length === 0,
+          reopened: roomClosed,
         });
+      });
     }
 
-    if (
-        request.method === "POST" && new URL(request.url).pathname === "/ensure-room"
-    ) {
-        let setup: RoomSetup;
 
-        try {
-            setup = await request.json<RoomSetup>();
-        } catch {
-            return Response.json(
-                { error: "Invalid room setup" },
-                { status: 400 }
-            );
-        }
-        if (typeof setup.roomName !== "string" || !setup.roomName.trim()) {
-            return Response.json(
-                { error: "Invalid room name" },
-                { status: 400 }
-            );
-        }
-        return this.runExclusive(async () => {
-            const roomClosed = (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
-
-            if (roomClosed) {
-                return Response.json(
-                    { error: "Room already closed" },
-                    { status: 410 }
-                );
-            }
-            const existingRoomName = await this.ctx.storage.get<string>("roomName");
-
-            if (existingRoomName && existingRoomName !== setup.roomName) {
-                return Response.json(
-                    { error: "Room name mismatch" },
-                    { status: 409 }
-                );
-            }
-            const existingRooms = await this.roomService.listRooms([setup.roomName]);
-
-            if (existingRooms.length === 0) {
-                await this.roomService.createRoom({
-                    name: setup.roomName,
-                    maxParticipants: 2,
-                    emptyTimeout: 1800,
-                });
-            }
-            await this.ctx.storage.put("roomName", setup.roomName);
-
-            return Response.json({
-                success: true,
-                roomName: setup.roomName,
-                created: existingRooms.length === 0,
-            });
-        });
-      }
-      
     if (
       request.method === "POST" &&
       new URL(request.url).pathname === "/enable-instant"
@@ -137,100 +171,104 @@ export class RoomState extends DurableObject<Env> {
       try {
         data = await request.json<RoomSetup>();
       } catch {
+        return Response.json(
+          { error: "Invalid instant meeting request." },
+          { status: 400 }
+        );
+      }
+
+      if (
+        typeof data.roomName !== "string" ||
+        !data.roomName.trim()
+      ) {
+        return Response.json(
+          { error: "Invalid room name." },
+          { status: 400 }
+        );
+      }
+
+      return this.runExclusive(async () => {
+        const roomClosed =
+          (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
+
+        if (roomClosed) {
           return Response.json(
-              { error: "Invalid instant meeting request." },
-              { status: 400 }
+            { error: "This consultation room has already been closed." },
+            { status: 410 }
           );
         }
 
+        const existingRoomName =
+          await this.ctx.storage.get<string>("roomName");
+
         if (
-          typeof data.roomName !== "string" ||
-          !data.roomName.trim()
+          !existingRoomName ||
+          existingRoomName !== data.roomName
         ) {
-            return Response.json(
-              { error: "Invalid room name." },
-              { status: 400 }
-            );
+          return Response.json(
+            { error: "Consultation room not found." },
+            { status: 404 }
+          );
         }
 
-        return this.runExclusive(async () => {
-          const roomClosed =
-            (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
+        await this.ctx.storage.put("instantMeetingEnabled", true);
 
-            if (roomClosed) {
-              return Response.json(
-                { error: "This consultation room has already been closed." },
-                { status: 410 }
-              );
-            }
-
-          const existingRoomName =
-            await this.ctx.storage.get<string>("roomName");
-
-            if (
-              !existingRoomName ||
-              existingRoomName !== data.roomName
-            ) {
-              return Response.json(
-                { error: "Consultation room not found." },
-                { status: 404 }
-              );
-            }
-
-            await this.ctx.storage.put("instantMeetingEnabled", true);
-
-            return Response.json({
-              success: true,
-              instantMeetingEnabled: true,
-            });
+        return Response.json({
+          success: true,
+          instantMeetingEnabled: true,
         });
+      });
     }
 
     if (request.method === "POST" && new URL(request.url).pathname === "/end-room") {
-        let data: RoomSetup;
-        
-        try {
-            data = await request.json<RoomSetup>();
-        } catch {
-            return Response.json(
-                { error: "Invalid room closure request" },
-                { status: 400 }
-            );
+      let data: RoomSetup;
+
+      try {
+        data = await request.json<RoomSetup>();
+      } catch {
+        return Response.json(
+          { error: "Invalid room closure request" },
+          { status: 400 }
+        );
+      }
+      if (typeof data.roomName !== "string" || !data.roomName.trim()) {
+        return Response.json(
+          { error: "Invalid room name" },
+          { status: 400 }
+        );
+      }
+      return this.runExclusive(async () => {
+        const roomClosed = (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
+
+        if (roomClosed) {
+          return Response.json({
+            success: true,
+            alreadyClosed: true,
+          });
         }
-        if (typeof data.roomName !== "string" || !data.roomName.trim()) {
-            return Response.json(
-                { error: "Invalid room name" },
-                { status: 400 }
-            );
+
+        const existingRoomName = await this.ctx.storage.get<string>("roomName");
+
+        if (!existingRoomName || existingRoomName !== data.roomName) {
+          return Response.json(
+            { error: "Room name mismatch or room not found" },
+            { status: 409 }
+          );
         }
-        return this.runExclusive(async () => {
-            const roomClosed = (await this.ctx.storage.get<boolean>("roomClosed")) ?? false;
-            
-            if (roomClosed) {
-                return Response.json({
-                    success: true,
-                    alreadyClosed: true,
-                });
-            }
+        await this.roomService.deleteRoom(data.roomName);
 
-            const existingRoomName = await this.ctx.storage.get<string>("roomName");
+        await this.ctx.storage.put("roomClosed", true);
+        await this.ctx.storage.put("instantMeetingEnabled", false);
+        await this.ctx.storage.put("participantCount", 0);
 
-            if (!existingRoomName || existingRoomName !== data.roomName) {
-                return Response.json(
-                    { error: "Room name mismatch or room not found" },
-                    { status: 409 }
-                );
-            }
-            await this.roomService.deleteRoom(data.roomName);
-            await this.ctx.storage.put("roomClosed", true);
-            await this.ctx.storage.delete("closeDeadline");
-            await this.ctx.storage.deleteAlarm();
+        await this.ctx.storage.delete("closeDeadline");
+        await this.ctx.storage.deleteAlarm();
 
-            return Response.json({
-                success: true,
-                alreadyClosed: false,
-            });
+        return Response.json({
+          success: true,
+          alreadyClosed: false,
         });
+      });
     }
 
     if (request.method !== "POST") {

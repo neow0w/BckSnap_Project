@@ -291,6 +291,8 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
                   const DataColumn(label: Text('Date and time')),
                   const DataColumn(label: Text('Type')),
                   const DataColumn(label: Text('Status')),
+                  if (widget.isReception)
+                    const DataColumn(label: Text('Referral')),
                   const DataColumn(label: Text('Actions')),
                 ],
                 rows: [
@@ -305,6 +307,8 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
                           Text(a.mode == 'online' ? 'Online' : 'In person'),
                         ),
                         DataCell(_statusChip(a.status)),
+                        if (widget.isReception)
+                          DataCell(_referralAction(a)),
                         DataCell(
                           widget.isReception ? _actions(a) : _doctorActions(a),
                         ),
@@ -315,6 +319,116 @@ class _WebAppointmentsPageState extends State<WebAppointmentsPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _viewReferral(ClinicAppointment a) async {
+    final bytes = a.referralImageBytes;
+
+    if (bytes == null || bytes.isEmpty) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: 850,
+            maxHeight: 750,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Referral document',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Appointment ${a.reference ?? a.id}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4,
+                    child: Center(
+                      child: Image.memory(
+                        bytes,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.broken_image_outlined,
+                                size: 48,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 12),
+                              Text(
+                                'The referral file could not be displayed. '
+                                'Please check that the uploaded file is a '
+                                'supported image.',
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _referralAction(ClinicAppointment a) {
+    final hasReferral =
+        a.referralImageBytes != null && a.referralImageBytes!.isNotEmpty;
+
+    if (!hasReferral) {
+      return const Tooltip(
+        message: 'No referral uploaded',
+        child: Icon(
+          Icons.insert_drive_file_outlined,
+          color: Colors.grey,
+        ),
+      );
+    }
+
+    return IconButton(
+      tooltip: 'View referral',
+      onPressed: () => _viewReferral(a),
+      icon: const Icon(
+        Icons.visibility_outlined,
+        color: Colors.blue,
       ),
     );
   }
