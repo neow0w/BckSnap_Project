@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
+import '../../core/theme_controller.dart';
+import '../auth/profile_avatar.dart';
 
 class _Dest {
   final String label;
@@ -89,6 +91,7 @@ class StaffWebShell extends StatelessWidget {
             appBar: AppBar(
               title: Text(dests[index].label),
               actions: [
+                const ThemeModeButton(),
                 if (AuthService().isStaffAccount)
                   IconButton(
                     tooltip: 'Switch profile',
@@ -98,7 +101,7 @@ class StaffWebShell extends StatelessWidget {
                 IconButton(
                   tooltip: 'My profile',
                   onPressed: () => context.push('/profile'),
-                  icon: const Icon(Icons.person_outline),
+                  icon: const MyAvatar(radius: 14),
                 ),
                 IconButton(
                   tooltip: 'Log out',
@@ -185,6 +188,7 @@ class StaffWebShell extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          const ThemeModeButton(),
                           if (extended && user != null)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
@@ -202,7 +206,7 @@ class StaffWebShell extends StatelessWidget {
                           IconButton(
                             tooltip: 'My profile',
                             onPressed: () => context.push('/profile'),
-                            icon: const Icon(Icons.person_outline),
+                            icon: const MyAvatar(radius: 14),
                           ),
                           IconButton(
                             tooltip: 'Log out',

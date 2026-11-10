@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../core/format.dart';
@@ -444,8 +445,69 @@ class AuthService {
     GoogleAuthProvider()..setCustomParameters({'prompt': 'select_account'}),
   );
 
-  Future<SocialResult> signInWithFacebook() =>
-      _signInWith(FacebookAuthProvider()..addScope('email'));
+  Future<SocialResult> signInWithFacebook() async {
+    try {
+      // Keep the existing Firebase provider flow for web.
+      if (kIsWeb) {
+        return await _signInWith(FacebookAuthProvider()..addScope('email'));
+      }
+
+      // Open native Facebook Login on Android.
+      final result = await FacebookAuth.instance.login(
+        permissions: ['email', 'public_profile'],
+      );
+
+      if (result.status == LoginStatus.cancelled) {
+        return SocialResult.cancelled;
+      }
+
+      if (result.status != LoginStatus.success || result.accessToken == null) {
+        throw ApiException(
+          500,
+          result.message ?? 'Facebook sign-in failed. Please try again.',
+        );
+      }
+
+      // Exchange the Facebook token for Firebase credentials.
+      final credential = FacebookAuthProvider.credential(
+        result.accessToken!.tokenString,
+      );
+
+      final cred = await _fa.signInWithCredential(credential);
+      final user = cred.user;
+
+      if (user == null) {
+        throw ApiException(500, 'Sign-in failed. Please try again.');
+      }
+
+      if ((user.email ?? '').isEmpty) {
+        await _fa.signOut();
+        throw ApiException(
+          422,
+          'That account has no email address. Please use another sign-in method.',
+        );
+      }
+
+      final snap = await _db.collection('users').doc(user.uid).get();
+
+      if (!snap.exists) {
+        _pendingSocial = user;
+        return SocialResult.needsProfile;
+      }
+
+      _pendingSocial = null;
+      await _loadProfile(user.uid);
+
+      return SocialResult.signedIn;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'canceled' || e.code == 'popup-closed-by-user') {
+        return SocialResult.cancelled;
+      }
+      throw _authError(e);
+    } on FirebaseException catch (e) {
+      throw apiErrorFrom(e);
+    }
+  }
 
   Future<SocialResult> _signInWith(AuthProvider provider) async {
     try {

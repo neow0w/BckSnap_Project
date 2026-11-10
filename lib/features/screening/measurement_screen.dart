@@ -8,7 +8,6 @@ import '../../services/screening_draft.dart';
 import '../../services/screening_service.dart';
 import '../../services/tilt_sensor.dart';
 import 'back_levels.dart';
-import 'posture_analysis.dart';
 import 'screening_result.dart';
 
 import 'dart:math' as math;
@@ -328,10 +327,6 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
           if (_readings[level.id] != null)
             LevelResult(level.name, _readings[level.id]!.atr),
       ],
-      posture: PostureAnalysis.from(
-        ScreeningDraft.landmarks,
-        reliable: ScreeningDraft.photoQualityGood,
-      ),
       subjectLabel: ScreeningDraft.forSelf ? null : ScreeningDraft.subjectLabel,
     );
 
@@ -339,9 +334,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
     try {
       await ScreeningService().saveScreening(
         angle: highest.atr,
-        photoBytes: ScreeningDraft.photoBytes,
-        photoName: ScreeningDraft.photoName,
-        details: result.toJson(),
+        details: {
+          ...result.toJson(),
+          'questionnaire': ScreeningDraft.questionnaire,
+        },
         forSelf: ScreeningDraft.forSelf,
         subject: ScreeningDraft.subject,
       );

@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../services/api_client.dart';
 import '../../services/message_service.dart';
 import '../../models/message.dart';
-import '../../core/theme.dart';
+import '../../core/chat_widgets.dart';
 
 class MessageScreen extends StatefulWidget {
   final String clinicId;
@@ -49,6 +49,7 @@ class _MessageScreenState extends State<MessageScreen> {
         _error = null;
         _loading = false;
       });
+      _service.markThreadRead(widget.clinicId);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -104,20 +105,10 @@ class _MessageScreenState extends State<MessageScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actionsIconTheme: const IconThemeData(color: Colors.white),
-        title: const Text(
-          'Contact Clinic',
-          style: TextStyle(color: Colors.white),
-        ),
-        leading: BackButton(
-          color: Colors.white,
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/messages'),
-        ),
+      appBar: chatAppBar(
+        title: 'Contact Clinic',
+        onBack: () =>
+            context.canPop() ? context.pop() : context.go('/messages'),
       ),
       body: SafeArea(
         child: Column(
@@ -175,60 +166,10 @@ class _MessageScreenState extends State<MessageScreen> {
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
                           final message = _messages[index];
-                          final isPatient = message.fromPatient;
-                          return Align(
-                            alignment: isPatient
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: Container(
-                              constraints: BoxConstraints(
-                                maxWidth:
-                                    MediaQuery.sizeOf(context).width * 0.78,
-                              ),
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isPatient
-                                    ? AppColors.tonal
-                                    : AppColors.fieldFill,
-                                borderRadius: BorderRadius.only(
-                                  topLeft: const Radius.circular(16),
-                                  topRight: const Radius.circular(16),
-                                  bottomLeft: Radius.circular(
-                                    isPatient ? 16 : 4,
-                                  ),
-                                  bottomRight: Radius.circular(
-                                    isPatient ? 4 : 16,
-                                  ),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    message.body,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: AppColors.text,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Text(
-                                      timeLabel(message.createdAt),
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: AppColors.hint,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                          return ChatBubble(
+                            text: message.body,
+                            time: timeLabel(message.createdAt),
+                            mine: message.fromPatient,
                           );
                         },
                       ),
@@ -240,61 +181,10 @@ class _MessageScreenState extends State<MessageScreen> {
                 child: Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
             const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _bodyCtrl,
-                      minLines: 1,
-                      maxLines: 4,
-                      maxLength: 1000,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: 'Enter text...',
-                        counterText: '',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: const BorderSide(
-                            color: AppColors.primary,
-                            width: 1.5,
-                          ),
-                        ),
-                      ),
-                      onSubmitted: (_) => _send(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    tooltip: 'Send message',
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                    ),
-                    onPressed: _sending ? null : _send,
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.send, size: 20),
-                  ),
-                ],
-              ),
+            ChatInputBar(
+              controller: _bodyCtrl,
+              sending: _sending,
+              onSend: _send,
             ),
           ],
         ),

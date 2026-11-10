@@ -53,3 +53,45 @@ String timeLabel(DateTime d) {
   final m = d.minute.toString().padLeft(2, '0');
   return '${d.day}/${d.month} $h:$m ${d.hour >= 12 ? 'PM' : 'AM'}';
 }
+
+/// One conversation row on the patient's Messages tab.
+class PatientThread {
+  final String clinicId;
+  final String lastMessage;
+  final DateTime? lastAt;
+  final bool? lastFromPatient; // null on older threads
+  final int unread;
+
+  const PatientThread({
+    required this.clinicId,
+    required this.lastMessage,
+    this.lastAt,
+    this.lastFromPatient,
+    this.unread = 0,
+  });
+
+  factory PatientThread.fromMap(Map<String, dynamic> m) => PatientThread(
+    clinicId: (m['clinicId'] ?? '').toString(),
+    lastMessage: (m['lastMessage'] ?? '').toString(),
+    lastAt: m['lastAt'] is Timestamp
+        ? (m['lastAt'] as Timestamp).toDate()
+        : null,
+    lastFromPatient: m['lastFromPatient'] as bool?,
+    unread: (m['unreadForPatient'] as num?)?.toInt() ?? 0,
+  );
+}
+
+/// "3:05 PM" today, "Yesterday", otherwise "12/10".
+String shortTimeLabel(DateTime d) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(d.year, d.month, d.day);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) {
+    final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+    final m = d.minute.toString().padLeft(2, '0');
+    return '$h:$m ${d.hour >= 12 ? 'PM' : 'AM'}';
+  }
+  if (diff == 1) return 'Yesterday';
+  return '${d.day}/${d.month}';
+}

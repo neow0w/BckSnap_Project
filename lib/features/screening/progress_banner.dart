@@ -72,9 +72,7 @@ class _ProgressBannerState extends State<ProgressBanner> {
         icon: Icons.flag_outlined,
         color: Theme.of(context).colorScheme.primary,
         title: 'Start your first screening',
-        text:
-            'Take a back photo and a scoliometer reading. Repeat it every '
-            'month to see how you are doing.',
+        text: 'Take a scoliometer reading. Repeat it every month to see how you are doing.',
         primary: 'Start screening',
       );
     }

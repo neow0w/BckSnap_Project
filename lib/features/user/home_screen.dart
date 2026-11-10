@@ -11,6 +11,7 @@ import '../../services/clinic_service.dart';
 import '../../services/screening_service.dart';
 import '../screening/progress_summary.dart';
 import '../screening/screening_result.dart';
+import '../../core/notification_prompt.dart';
 
 /// The patient's dashboard: latest screening, next check-up,
 /// next appointment and recent notifications.
@@ -33,6 +34,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _load();
+    // Ask once whether to turn on notifications, after the screen is drawn.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) NotificationPrompt.maybeAsk(context);
+    });
   }
 
   Future<void> _load() async {

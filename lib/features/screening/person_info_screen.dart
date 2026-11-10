@@ -80,7 +80,7 @@ class _PersonInfoScreenState extends State<PersonInfoScreen> {
       'relationship': _relationship,
       'permissionConfirmed': true,
     };
-    context.go('/screening/guide');
+    context.go('/screening/questionnaire');
   }
 
   Widget _dropdown({

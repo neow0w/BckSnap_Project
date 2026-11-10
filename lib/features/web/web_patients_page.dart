@@ -211,7 +211,6 @@ class _WebPatientsPageState extends State<WebPatientsPage> {
     final levels = (s.details?['levels'] as List? ?? const [])
         .whereType<Map>()
         .toList();
-    final posture = s.details?['posture'];
     String deg(dynamic v) => v is num ? '${v.toStringAsFixed(1)}°' : '-';
 
     return Card(
@@ -243,14 +242,6 @@ class _WebPatientsPageState extends State<WebPatientsPage> {
             if (levels.isNotEmpty) ...[
               const SizedBox(height: 8),
               for (final l in levels) Text('${l['name']}: ${deg(l['atr'])}'),
-            ],
-            if (posture is Map) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Photo posture: shoulder tilt ${deg(posture['shoulder_tilt'])}, '
-                'hip tilt ${deg(posture['hip_tilt'])}, '
-                'trunk lean ${deg(posture['trunk_lean'])}',
-              ),
             ],
             if (s.hasPhoto) ...[
               const SizedBox(height: 8),

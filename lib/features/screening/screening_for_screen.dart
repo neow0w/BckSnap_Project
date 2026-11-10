@@ -24,7 +24,7 @@ class _ScreeningForScreenState extends State<ScreeningForScreen> {
   void _continue() {
     ScreeningDraft.forSelf = _forSelf;
     ScreeningDraft.subject = null;
-    context.go(_forSelf ? '/screening/guide' : '/screening/person');
+    context.go(_forSelf ? '/screening/questionnaire' : '/screening/person');
   }
 
   Widget _option({

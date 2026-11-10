@@ -1,6 +1,4 @@
-﻿import { createHash } from "node:crypto";
-
-function encodeBase64Url(bytes: Uint8Array): string {
+﻿function encodeBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
@@ -12,15 +10,17 @@ function encodeBase64Url(bytes: Uint8Array): string {
     ;
 }
 
-function hashProfilePassword(salt: string, password: string): string {
+async function hashProfilePassword(salt: string, password: string): Promise<string> {
   let bytes = new TextEncoder().encode(`${salt}:${password}`);
 
   for (let i = 0; i < 10000; i++) {
-    bytes = new Uint8Array(createHash("sha256").update(bytes).digest());
+    bytes = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
   }
 
   return encodeBase64Url(bytes);
 }
 
-console.log("Backend test hash:", hashProfilePassword("test-salt", "test123"));
+hashProfilePassword("test-salt", "test123").then((hash) => {
+  console.log("Backend test hash:", hash);
+});
 

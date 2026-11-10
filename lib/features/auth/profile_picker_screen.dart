@@ -1,8 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/home_for.dart';
 import '../../core/theme.dart';
+import '../../core/theme_controller.dart';
 import '../../core/widgets.dart';
 import '../../models/staff_profile.dart';
 import '../../services/api_client.dart';
@@ -24,6 +27,7 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
   final _service = ProfileService();
 
   List<StaffProfile> _profiles = [];
+  Map<String, Uint8List> _photos = {};
   bool _loading = true;
   String? _error;
 
@@ -48,9 +52,14 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {
       if (mounted) setState(() => _error = 'Could not load the profiles.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
+    try {
+      final photos = await _service.profilePhotos();
+      if (mounted) setState(() => _photos = photos);
+    } catch (_) {
+      // Photos are optional: the icons are shown instead.
+    }
+    if (mounted) setState(() => _loading = false);
   }
 
   /// Returns an error message, or null when the password was right.
@@ -107,6 +116,7 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
         title: const Text('Profiles'),
         automaticallyImplyLeading: false,
         actions: [
+          const ThemeModeButton(),
           IconButton(
             tooltip: 'Log out',
             onPressed: _logout,
@@ -181,47 +191,55 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
   }
 
   Widget _tile(StaffProfile p) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => _open(p),
-      child: Container(
-        width: 130,
-        height: 150,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircleAvatar(
-              radius: 30,
-              backgroundColor: AppColors.tonal,
-              child: Icon(
-                switch (p.role) {
-                  'doctor' => Icons.medical_services,
-                  'pt' => Icons.accessibility_new,
-                  _ => Icons.support_agent,
-                },
-                size: 30,
-                color: AppColors.primary,
-              ),
+    final photo = _photos[p.id];
+    final primary = Theme.of(context).colorScheme.primary;
+    return SizedBox(
+      width: 130,
+      height: 160,
+      child: Card(
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _open(p),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 34,
+                  backgroundColor: primary.withValues(alpha: 0.15),
+                  backgroundImage: photo == null ? null : MemoryImage(photo),
+                  child: photo != null
+                      ? null
+                      : Icon(
+                          switch (p.role) {
+                            'doctor' => Icons.medical_services,
+                            'pt' => Icons.accessibility_new,
+                            _ => Icons.support_agent,
+                          },
+                          size: 32,
+                          color: primary,
+                        ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  p.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  p.roleLabel,
+                  style: const TextStyle(fontSize: 11, color: AppColors.hint),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            Text(
-              p.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            ),
-            Text(
-              p.roleLabel,
-              style: const TextStyle(fontSize: 11, color: AppColors.hint),
-            ),
-          ],
+          ),
         ),
       ),
     );

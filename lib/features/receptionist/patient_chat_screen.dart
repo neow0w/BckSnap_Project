@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../models/message.dart';
 import '../../services/api_client.dart';
 import '../../services/message_service.dart';
+import '../../core/chat_widgets.dart';
 
 /// A conversation with one patient: GET + POST /messages/patient/{id}.
 /// Also used by "Contact patient for physical visit" in Figure 9.
@@ -97,48 +98,21 @@ class _PatientChatScreenState extends State<PatientChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.patientName ?? 'Patient #${widget.patientId}'),
-        leading: BackButton(
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/reception'),
-        ),
+      appBar: chatAppBar(
+        title: widget.patientName ?? 'Patient #${widget.patientId}',
+        onBack: () =>
+            context.canPop() ? context.pop() : context.go('/reception'),
       ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(child: _buildMessages()),
             const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _inputCtrl,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.newline,
-                      decoration: const InputDecoration(
-                        hintText: 'Write a reply...',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _sending ? null : _send,
-                    icon: _sending
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                  ),
-                ],
-              ),
+            ChatInputBar(
+              controller: _inputCtrl,
+              sending: _sending,
+              onSend: _send,
+              hint: 'Write a reply...',
             ),
           ],
         ),
@@ -168,41 +142,16 @@ class _PatientChatScreenState extends State<PatientChatScreen> {
     if (_messages.isEmpty) {
       return const Center(child: Text('No messages yet. Say hello!'));
     }
-    final scheme = Theme.of(context).colorScheme;
     return ListView.builder(
       controller: _scrollCtrl,
       padding: const EdgeInsets.all(12),
       itemCount: _messages.length,
       itemBuilder: (context, i) {
         final m = _messages[i];
-        // Clinic (us) on the right, patient on the left.
-        final mine = !m.fromPatient;
-        return Align(
-          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            padding: const EdgeInsets.all(12),
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75,
-            ),
-            decoration: BoxDecoration(
-              color: mine
-                  ? scheme.primaryContainer
-                  : scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(m.body),
-                const SizedBox(height: 4),
-                Text(
-                  timeLabel(m.createdAt),
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ],
-            ),
-          ),
+        return ChatBubble(
+          text: m.body,
+          time: timeLabel(m.createdAt),
+          mine: !m.fromPatient, // clinic on the right
         );
       },
     );

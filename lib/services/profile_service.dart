@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'dart:typed_data';
+
+import '../core/image_compress.dart';
 import '../core/profile_crypto.dart';
 import '../models/staff_profile.dart';
 import 'api_client.dart';
@@ -192,7 +195,7 @@ class ProfileService {
     if (status == 'active' && role == 'doctor') {
       batch.set(
         _db.collection('doctors').doc(ref.id),
-        _doctorCard(ref.id, clinicId, cleanName,professionalType, professions),
+        _doctorCard(ref.id, clinicId, cleanName, professionalType, professions),
       );
     }
 
@@ -221,7 +224,13 @@ class ProfileService {
         if (approve && p.isDoctor) {
           batch.set(
             _db.collection('doctors').doc(p.id),
-            _doctorCard(p.id, p.clinicId, p.name, p.professionalType, p.professions),
+            _doctorCard(
+              p.id,
+              p.clinicId,
+              p.name,
+              p.professionalType,
+              p.professions,
+            ),
           );
         }
         AuditLog.addTo(
@@ -245,7 +254,13 @@ class ProfileService {
     // A doctor is only bookable by patients while active.
     if (p.isDoctor) {
       batch.set(_db.collection('doctors').doc(p.id), {
-        ..._doctorCard(p.id, p.clinicId, p.name, p.professionalType, p.professions),
+        ..._doctorCard(
+          p.id,
+          p.clinicId,
+          p.name,
+          p.professionalType,
+          p.professions,
+        ),
         'active': active,
       }, SetOptions(merge: true));
     }
@@ -279,5 +294,44 @@ class ProfileService {
           details: p.role,
         );
         await batch.commit();
+      });
+
+  /// Photos of the clinic's staff profiles: profile id -> JPEG bytes.
+  Future<Map<String, Uint8List>> profilePhotos() => _guard(() async {
+    final snap = await _db
+        .collection('staffProfilePhotos')
+        .where('clinicId', isEqualTo: _me.clinicId)
+        .get();
+    final out = <String, Uint8List>{};
+    for (final d in snap.docs) {
+      final data = d.data()['data'];
+      if (data is Blob) out[d.id] = data.bytes;
+    }
+    return out;
+  });
+
+  Future<Uint8List?> profilePhoto(String profileId) => _guard(() async {
+    final snap = await _db
+        .collection('staffProfilePhotos')
+        .doc(profileId)
+        .get();
+    final data = snap.data()?['data'];
+    return data is Blob ? data.bytes : null;
+  });
+
+  /// A staff member sets the photo of the profile they are using.
+  Future<void> saveProfilePhoto(StaffProfile p, Uint8List bytes) =>
+      _guard(() async {
+        final small = await ImageCompressor.shrink(
+          bytes,
+          maxSide: 400,
+          quality: 70,
+          maxBytes: 60 * 1024,
+        );
+        await _db.collection('staffProfilePhotos').doc(p.id).set({
+          'clinicId': p.clinicId,
+          'data': Blob(small),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       });
 }
