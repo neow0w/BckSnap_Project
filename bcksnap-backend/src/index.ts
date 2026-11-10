@@ -320,6 +320,707 @@ async function createFirestoreDocumentAsAdmin(
   return await response.json();
 }
 
+async function queryFirestoreAsAdmin(
+  structuredQuery: Record<string, unknown>,
+  env: Env
+): Promise<any[]> {
+  const accessToken = await getGoogleAccessToken(env);
+
+  const response = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents:runQuery`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        structuredQuery,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Firestore query failed with status ${response.status}.`
+    );
+  }
+
+  const results = await response.json() as Array<{
+    document?: any;
+  }>;
+
+  return results
+    .filter((result) => result.document)
+    .map((result) => result.document);
+}
+
+
+async function createTopLevelFirestoreDocumentAsAdmin(
+  collectionId: string,
+  documentId: string,
+  fields: Record<string, unknown>,
+  env: Env
+): Promise<void> {
+  const accessToken = await getGoogleAccessToken(env);
+
+  const response = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${encodeURIComponent(collectionId)}?documentId=${encodeURIComponent(documentId)}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ fields }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Firestore notification creation failed with status ${response.status}.`
+    );
+  }
+}
+
+
+async function handleNotifyAppointmentBooking(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  try {
+    // 1. Authenticate the patient using their Firebase ID token.
+    const authorization = request.headers.get("Authorization") ?? "";
+    const token = authorization.startsWith("Bearer ")
+      ? authorization.slice(7)
+      : "";
+
+    if (!token) {
+      return Response.json(
+        { error: "Authentication required." },
+        { status: 401 }
+      );
+    }
+
+    let patientUid: string;
+
+    try {
+      const { payload } = await jwtVerify(
+        token,
+        FIREBASE_JWKS,
+        {
+          issuer: `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`,
+          audience: FIREBASE_PROJECT_ID,
+          algorithms: ["RS256"],
+        }
+      );
+
+      if (typeof payload.sub !== "string") {
+        throw new Error("Invalid patient identity.");
+      }
+
+      patientUid = payload.sub;
+    } catch {
+      return Response.json(
+        { error: "Invalid patient authentication token." },
+        { status: 401 }
+      );
+    }
+
+    // 2. Validate the appointment ID.
+    const body = await request.json() as {
+      appointmentId?: unknown;
+    };
+
+    const appointmentId = body.appointmentId;
+
+    if (
+      typeof appointmentId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(appointmentId)
+    ) {
+      return Response.json(
+        { error: "A valid appointment ID is required." },
+        { status: 400 }
+      );
+    }
+
+    // 3. Retrieve the appointment using privileged Firestore access.
+    const appointment = await getFirestoreDocumentAsAdmin(
+      `appointments/${appointmentId}`,
+      env
+    );
+
+    if (!appointment) {
+      return Response.json(
+        { error: "Appointment not found." },
+        { status: 404 }
+      );
+    }
+
+    const appointmentFields = appointment.fields ?? {};
+
+    // The caller must own this appointment.
+    if (appointmentFields.userId?.stringValue !== patientUid) {
+      return Response.json(
+        { error: "You are not authorized to notify staff about this appointment." },
+        { status: 403 }
+      );
+    }
+
+    if (appointmentFields.status?.stringValue !== "pending") {
+      return Response.json(
+        { error: "Only pending appointments can trigger booking notifications." },
+        { status: 409 }
+      );
+    }
+
+    // Demo appointments should not generate real staff notifications.
+    if (appointmentFields.isDemo?.booleanValue === true) {
+      return Response.json({
+        success: true,
+        message: "Demo appointment skipped.",
+        notificationsCreated: 0,
+      });
+    }
+
+    const clinicId = appointmentFields.clinicId?.stringValue;
+    const doctorId = appointmentFields.doctorId?.stringValue;
+    const patientName =
+      appointmentFields.patientName?.stringValue ?? "A patient";
+    const reference =
+      appointmentFields.reference?.stringValue ?? appointmentId;
+
+    if (!clinicId || !doctorId) {
+      return Response.json(
+        { error: "Appointment is missing clinic or doctor information." },
+        { status: 400 }
+      );
+    }
+
+
+    // 4. Retrieve the assigned provider and verify their active profile.
+    const providerProfile = await getFirestoreDocumentAsAdmin(
+      `staffProfiles/${doctorId}`,
+      env
+    );
+
+    const providerFields = providerProfile?.fields ?? {};
+
+    const recipients = new Map<string, string>();
+
+    const providerRole = providerFields.role?.stringValue;
+
+    if (
+      providerFields.clinicId?.stringValue === clinicId &&
+      (providerRole === "doctor" || providerRole === "pt") &&
+      providerFields.status?.stringValue === "active"
+    ) {
+      recipients.set(doctorId, providerRole);
+    }
+
+    // 5. Retrieve all active receptionists assigned to this clinic.
+    const receptionists = await queryFirestoreAsAdmin(
+      {
+        from: [{ collectionId: "staffProfiles" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "clinicId" },
+            op: "EQUAL",
+            value: { stringValue: clinicId },
+          },
+        },
+      },
+      env
+    );
+
+    for (const profile of receptionists) {
+      const fields = profile.fields ?? {};
+      const nameParts = String(profile.name ?? "").split("/");
+      const profileId = nameParts[nameParts.length - 1];
+
+      if (
+        profileId &&
+        fields.clinicId?.stringValue === clinicId &&
+        fields.role?.stringValue === "receptionist" &&
+        fields.status?.stringValue === "active"
+      ) {
+        recipients.set(profileId, "receptionist");
+      }
+    }
+
+    // 6. Create one notification for each eligible staff profile.
+    let notificationsCreated = 0;
+
+    for (const profileId of recipients.keys()) {
+      // Check existing notification first to prevent duplicates.
+      const notificationId = `booking_${appointmentId}_${profileId}`;
+
+      const existing = await getFirestoreDocumentAsAdmin(
+        `notifications/${notificationId}`,
+        env
+      );
+
+      if (existing) {
+        continue;
+      }
+
+      // Missing preferences default to enabled.
+      // Preference-read failures also default to unread notifications.
+      let shouldBeUnread = true;
+
+      try {
+        const preferences = await getFirestoreDocumentAsAdmin(
+          `staffNotificationPreferences/${profileId}`,
+          env
+        );
+
+        const preferenceFields = preferences?.fields ?? {};
+        const categories =
+          preferenceFields.categories?.mapValue?.fields ?? {};
+
+        const enabled =
+          preferenceFields.enabled?.booleanValue ?? true;
+
+        const appointmentsEnabled =
+          categories.appointments?.booleanValue ?? true;
+
+        shouldBeUnread = enabled && appointmentsEnabled;
+      } catch (error) {
+        console.error(
+          `Unable to read notification preferences for ${profileId}:`,
+          error
+        );
+        // If preferences cannot be read, create the notification as unread.
+        shouldBeUnread = true;
+      }
+
+      const fields = {
+        recipientType: { stringValue: "staff" },
+        recipientId: { stringValue: profileId },
+        clinicId: { stringValue: clinicId },
+        appointmentId: { stringValue: appointmentId },
+        eventType: { stringValue: "new_booking" },
+        title: { stringValue: "New appointment booking" },
+        message: {
+          stringValue: `${patientName} booked an appointment with the clinic. Reference: ${reference}.`,
+        },
+        read: { booleanValue: !shouldBeUnread },
+        createdAt: { timestampValue: new Date().toISOString() },
+      };
+
+      try {
+        await createTopLevelFirestoreDocumentAsAdmin(
+          "notifications",
+          notificationId,
+          fields,
+          env
+        );
+
+        notificationsCreated++;
+      } catch (error) {
+        // A concurrent retry may have created the same notification.
+        const createdByAnotherRequest =
+          await getFirestoreDocumentAsAdmin(
+            `notifications/${notificationId}`,
+            env
+          );
+
+        if (!createdByAnotherRequest) {
+          throw error;
+        }
+      }
+    }
+
+    return Response.json({
+      success: true,
+      message: "Appointment booking notifications processed.",
+      notificationsCreated,
+    });
+  } catch (error) {
+    console.error("Appointment booking notification error:", error);
+
+    return Response.json(
+      { error: "Unable to process appointment booking notifications." },
+      { status: 500 }
+    );
+  }
+}
+
+
+async function handleGetStaffNotifications(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  try {
+    let staff: AuthenticatedStaffProfile;
+
+    try {
+      staff = await authenticateStaffProfile(request, env);
+    } catch {
+      return Response.json(
+        { error: "Invalid or expired staff profile session." },
+        { status: 401 }
+      );
+    }
+
+    const documents = await queryFirestoreAsAdmin(
+      {
+        from: [
+          {
+            collectionId: "notifications",
+          },
+        ],
+        where: {
+          compositeFilter: {
+            op: "AND",
+            filters: [
+              {
+                fieldFilter: {
+                  field: { fieldPath: "recipientType" },
+                  op: "EQUAL",
+                  value: { stringValue: "staff" },
+                },
+              },
+              {
+                fieldFilter: {
+                  field: { fieldPath: "recipientId" },
+                  op: "EQUAL",
+                  value: { stringValue: staff.profileId },
+                },
+              },
+              {
+                fieldFilter: {
+                  field: { fieldPath: "clinicId" },
+                  op: "EQUAL",
+                  value: { stringValue: staff.clinicId },
+                },
+              },
+            ],
+          },
+        },
+        orderBy: [
+          {
+            field: { fieldPath: "createdAt" },
+            direction: "DESCENDING",
+          },
+        ],
+        limit: 50,
+      },
+      env
+    );
+
+    const notifications = documents.map((document) => {
+      const fields = document.fields ?? {};
+      const nameParts = String(document.name ?? "").split("/");
+
+      return {
+        id: nameParts[nameParts.length - 1],
+        appointmentId: fields.appointmentId?.stringValue ?? "",
+        eventType: fields.eventType?.stringValue ?? "",
+        title: fields.title?.stringValue ?? "",
+        message: fields.message?.stringValue ?? "",
+        createdAt: fields.createdAt?.timestampValue ?? null,
+        read: fields.read?.booleanValue ?? false,
+      };
+    });
+
+    return Response.json({
+      success: true,
+      notifications,
+    });
+  } catch (error) {
+    console.error("Get staff notifications error:", error);
+
+    return Response.json(
+      { error: "Unable to load staff notifications." },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleMarkStaffNotificationRead(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  try {
+    let staff: AuthenticatedStaffProfile;
+
+    try {
+      staff = await authenticateStaffProfile(request, env);
+    } catch {
+      return Response.json(
+        { error: "Invalid or expired staff profile session." },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json() as {
+      notificationId?: unknown;
+    };
+
+    const notificationId = body.notificationId;
+
+    if (
+      typeof notificationId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(notificationId)
+    ) {
+      return Response.json(
+        { error: "A valid notification ID is required." },
+        { status: 400 }
+      );
+    }
+
+    const notification = await getFirestoreDocumentAsAdmin(
+      `notifications/${notificationId}`,
+      env
+    );
+
+    if (!notification) {
+      return Response.json(
+        { error: "Notification not found." },
+        { status: 404 }
+      );
+    }
+
+    const fields = notification.fields ?? {};
+
+    if (
+      fields.recipientType?.stringValue !== "staff" ||
+      fields.recipientId?.stringValue !== staff.profileId ||
+      fields.clinicId?.stringValue !== staff.clinicId
+    ) {
+      return Response.json(
+        { error: "You are not authorized to update this notification." },
+        { status: 403 }
+      );
+    }
+
+    if (typeof notification.updateTime !== "string") {
+      return Response.json(
+        { error: "Notification could not be updated. Please try again." },
+        { status: 409 }
+      );
+    }
+
+    await updateFirestoreDocumentAsAdmin(
+      `notifications/${notificationId}`,
+      {
+        read: { booleanValue: true },
+      },
+      env,
+      notification.updateTime
+    );
+
+    return Response.json({
+      success: true,
+      message: "Notification marked as read.",
+    });
+  } catch (error) {
+    console.error("Mark staff notification read error:", error);
+
+    return Response.json(
+      { error: "Unable to update staff notification." },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleGetStaffNotificationPreferences(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  try {
+    let staff: AuthenticatedStaffProfile;
+
+    try {
+      staff = await authenticateStaffProfile(request, env);
+    } catch {
+      return Response.json(
+        { error: "Invalid or expired staff profile session." },
+        { status: 401 }
+      );
+    }
+
+    const document = await getFirestoreDocumentAsAdmin(
+      `staffNotificationPreferences/${staff.profileId}`,
+      env
+    );
+
+    const fields = document?.fields ?? {};
+
+    const categories = fields.categories?.mapValue?.fields ?? {};
+
+    return Response.json({
+      success: true,
+      preferences: {
+        enabled: fields.enabled?.booleanValue ?? true,
+        categories: {
+          appointments: categories.appointments?.booleanValue ?? true,
+          consultations: categories.consultations?.booleanValue ?? true,
+          messages: categories.messages?.booleanValue ?? true,
+          system: categories.system?.booleanValue ?? true,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get staff notification preferences error:", error);
+
+    return Response.json(
+      { error: "Unable to load notification preferences." },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleUpdateStaffNotificationPreferences(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  try {
+    let staff: AuthenticatedStaffProfile;
+
+    try {
+      staff = await authenticateStaffProfile(request, env);
+    } catch {
+      return Response.json(
+        { error: "Invalid or expired staff profile session." },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json() as {
+      enabled?: unknown;
+      categories?: {
+        appointments?: unknown;
+        consultations?: unknown;
+        messages?: unknown;
+        system?: unknown;
+      };
+    };
+
+    if (
+      typeof body.enabled !== "boolean" ||
+      !body.categories ||
+      typeof body.categories !== "object" ||
+      typeof body.categories.appointments !== "boolean" ||
+      typeof body.categories.consultations !== "boolean" ||
+      typeof body.categories.messages !== "boolean" ||
+      typeof body.categories.system !== "boolean"
+    ) {
+      return Response.json(
+        { error: "Invalid notification preferences." },
+        { status: 400 }
+      );
+    }
+
+    const fields = {
+      clinicId: { stringValue: staff.clinicId },
+      recipientId: { stringValue: staff.profileId },
+      enabled: { booleanValue: body.enabled },
+      categories: {
+        mapValue: {
+          fields: {
+            appointments: {
+              booleanValue: body.categories.appointments,
+            },
+            consultations: {
+              booleanValue: body.categories.consultations,
+            },
+            messages: {
+              booleanValue: body.categories.messages,
+            },
+            system: {
+              booleanValue: body.categories.system,
+            },
+          },
+        },
+      },
+      updatedAt: {
+        timestampValue: new Date().toISOString(),
+      },
+    };
+
+    const existingDocument = await getFirestoreDocumentAsAdmin(
+      `staffNotificationPreferences/${staff.profileId}`,
+      env
+    );
+
+    const accessToken = await getGoogleAccessToken(env);
+
+    let response: Response;
+
+    if (existingDocument) {
+      if (typeof existingDocument.updateTime !== "string") {
+        return Response.json(
+          { error: "Preferences could not be updated. Please try again." },
+          { status: 409 }
+        );
+      }
+
+      const params = new URLSearchParams();
+
+      params.append("updateMask.fieldPaths", "clinicId");
+      params.append("updateMask.fieldPaths", "recipientId");
+      params.append("updateMask.fieldPaths", "enabled");
+      params.append("updateMask.fieldPaths", "categories");
+      params.append("updateMask.fieldPaths", "updatedAt");
+
+      params.set(
+        "currentDocument.updateTime",
+        existingDocument.updateTime
+      );
+
+      response = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/staffNotificationPreferences/${encodeURIComponent(staff.profileId)}?${params.toString()}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ fields }),
+        }
+      );
+    } else {
+      response = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/staffNotificationPreferences?documentId=${encodeURIComponent(staff.profileId)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ fields }),
+        }
+      );
+    }
+
+    if (!response.ok) {
+      console.error(
+        "Firestore notification preferences write failed:",
+        response.status,
+        await response.text()
+      );
+
+      return Response.json(
+        { error: "Unable to save notification preferences." },
+        { status: response.status === 409 ? 409 : 500 }
+      );
+    }
+
+    return Response.json({
+      success: true,
+      message: "Notification preferences saved.",
+    });
+  } catch (error) {
+    console.error("Update staff notification preferences error:", error);
+
+    return Response.json(
+      { error: "Unable to save notification preferences." },
+      { status: 500 }
+    );
+  }
+}
 
 async function handleGoogleAuthTest(
   _request: Request,
@@ -697,6 +1398,8 @@ async function handleProfileSessionValidation(
 
     return Response.json({
       valid: true,
+      clinicAccountUid,
+      sessionId,
       profile: {
         id: profileId,
         clinicId,
@@ -709,6 +1412,60 @@ async function handleProfileSessionValidation(
       { status: 401 }
     );
   }
+}
+
+type AuthenticatedStaffProfile = {
+  clinicAccountUid: string;
+  profileId: string;
+  clinicId: string;
+  role: string;
+  sessionId: string;
+};
+
+async function authenticateStaffProfile(
+  request: Request,
+  env: Env
+): Promise<AuthenticatedStaffProfile> {
+  const validationResponse = await handleProfileSessionValidation(
+    request,
+    env
+  );
+
+  if (!validationResponse.ok) {
+    throw new Error("Invalid or expired staff profile session.");
+  }
+
+  const body = await validationResponse.json() as {
+    valid?: boolean;
+    clinicAccountUid?: string;
+    sessionId?: string;
+    profile?: {
+      id?: string;
+      clinicId?: string;
+      role?: string;
+    };
+  };
+
+  const profile = body.profile;
+
+  if (
+    body.valid !== true ||
+    !body.clinicAccountUid ||
+    !body.sessionId ||
+    !profile?.id ||
+    !profile.clinicId ||
+    !profile.role
+  ) {
+    throw new Error("Unable to verify staff profile.");
+  }
+
+  return {
+    clinicAccountUid: body.clinicAccountUid,
+    profileId: profile.id,
+    clinicId: profile.clinicId,
+    role: profile.role,
+    sessionId: body.sessionId,
+  };
 }
 
 async function handleCompleteAppointment(
@@ -1016,6 +1773,31 @@ export default {
       response = await handleProfileSessionRevoke(request, env);
     } else if (
       request.method === "POST" &&
+      url.pathname === "/api/appointments/notify-booking"
+    ) {
+      response = await handleNotifyAppointmentBooking(request, env);
+    } else if (
+      request.method === "POST" &&
+      url.pathname === "/api/staff/notifications"
+    ) {
+      response = await handleGetStaffNotifications(request, env);
+    } else if (
+      request.method === "POST" &&
+      url.pathname === "/api/staff/notifications/read"
+    ) {
+      response = await handleMarkStaffNotificationRead(request, env);
+    } else if (
+      request.method === "POST" &&
+      url.pathname === "/api/staff/notifications/preferences"
+    ) {
+      response = await handleGetStaffNotificationPreferences(request, env);
+    } else if (
+      request.method === "POST" &&
+      url.pathname === "/api/staff/notifications/preferences/update"
+    ) {
+      response = await handleUpdateStaffNotificationPreferences(request, env);
+    } else if (
+      request.method === "POST" &&
       url.pathname === "/api/appointments/complete"
     ) {
       response = await handleCompleteAppointment(request, env);
@@ -1024,7 +1806,7 @@ export default {
       url.pathname === "/api/consultation/token"
     ) {
       response = await handleConsultationToken(request, env);
-      
+
     } else if (
       request.method === "GET" &&
       url.pathname === "/api/consultation/messages"

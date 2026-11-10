@@ -174,19 +174,6 @@ class _WebDoctorSchedulePageState extends State<WebDoctorSchedulePage> {
       if (end - start < 60) {
         return '${_dayName(day)}: Working hours must be at least 60 minutes.';
       }
-
-      if (data.lunchBreakEnabled) {
-        final lunchStart = _minutes(data.lunchStart);
-        final lunchEnd = _minutes(data.lunchEnd);
-
-        if (lunchStart >= lunchEnd) {
-          return '${_dayName(day)}: Lunch End must be after Lunch Start.';
-        }
-
-        if (lunchStart < start || lunchEnd > end) {
-          return '${_dayName(day)}: Lunch break must be within working hours.';
-        }
-      }
     }
 
     if (!_schedule.values.any((day) => day.enabled)) {
@@ -221,16 +208,19 @@ Future<void> _saveSchedule() async {
       throw Exception('Please select a staff profile first.');
     }
 
-    if (account.role != 'doctor' || !profile.isDoctor) {
-      throw Exception('Only doctor profiles can manage schedules.');
+    if (!['doctor', 'pt'].contains(account.role) ||
+        profile.role != account.role) {
+      throw Exception(
+        'Only the selected Doctor or Physical Therapist profile can manage schedules.',
+      );
     }
 
     if (!profile.isActive) {
-      throw Exception('Your doctor profile is not active.');
+      throw Exception('Your staff profile is not active.');
     }
 
     if (profile.clinicId != account.clinicId) {
-      throw Exception('Doctor profile does not belong to this clinic.');
+      throw Exception('Staff profile does not belong to this clinic.');
     }
 
     final schedule = DoctorSchedule(
@@ -376,71 +366,6 @@ Future<void> _saveSchedule() async {
                   ),
                 ],
               ),
-
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Lunch Break',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    data.lunchBreakEnabled ? 'Enabled' : 'Optional',
-                    style: TextStyle(
-                      color: data.lunchBreakEnabled ? Colors.blue : Colors.grey,
-                      fontSize: 12,
-                    ),
-                  ),
-                  Switch(
-                    value: data.lunchBreakEnabled,
-                    activeThumbColor: Colors.blue,
-                    onChanged: (value) {
-                      _updateDay(
-                        day,
-                        DoctorDaySchedule(
-                          enabled: data.enabled,
-                          timeIn: data.timeIn,
-                          timeOut: data.timeOut,
-                          lunchBreakEnabled: value,
-                          lunchStart: data.lunchStart,
-                          lunchEnd: data.lunchEnd,
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-
-              if (data.lunchBreakEnabled) ...[
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _timeField(
-                      day,
-                      'LUNCH START',
-                      'lunchStart',
-                      data.lunchStart,
-                      Icons.restaurant,
-                    ),
-                    const SizedBox(width: 12),
-                    _timeField(
-                      day,
-                      'LUNCH END',
-                      'lunchEnd',
-                      data.lunchEnd,
-                      Icons.restaurant_menu,
-                    ),
-                  ],
-                ),
-              ],
             ] else ...[
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -531,8 +456,7 @@ Future<void> _saveSchedule() async {
               const SizedBox(height: 6),
 
               Text(
-                'Enable the days you accept consultations, '
-                'set your working hours, and optionally add a lunch break.',
+                'Enable the days you accept consultations and set your working hours.',
                 style: TextStyle(color: Colors.grey.shade600),
               ),
 

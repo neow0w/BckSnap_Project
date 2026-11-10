@@ -19,22 +19,16 @@ class AppointmentBookingScreen extends StatefulWidget {
       _AppointmentBookingScreenState();
 }
 
-class _AppointmentBookingScreenState extends State<AppointmentBookingScreen> {
+class _AppointmentBookingScreenState
+    extends State<AppointmentBookingScreen> {
   final ClinicService _service = ClinicService();
   final ImagePicker _imagePicker = ImagePicker();
+
   XFile? _referralImage;
+
   bool get _requiresReferral {
-    final specializations = _doctor?.specializations ?? [];
-
-    return specializations.any((specialization) {
-      final value = specialization.toLowerCase();
-
-      return value.contains('physical therapist') ||
-          value.contains('physical therapy') ||
-          value.contains('physiotherapist') ||
-          value.contains('physiotherapy') ||
-          RegExp(r'\bpt\b').hasMatch(value);
-    });
+    return _doctor?.requiresReferral == true ||
+        _doctor?.professionalType == 'Physical Therapist';
   }
 
   ClinicInfo? _clinic;
