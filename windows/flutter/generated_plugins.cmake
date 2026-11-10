@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   cloud_firestore
   connectivity_plus
+  facebook_auth_desktop
   file_selector_windows
   firebase_auth
   firebase_core

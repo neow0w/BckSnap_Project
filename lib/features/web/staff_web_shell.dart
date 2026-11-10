@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
+import '../../core/theme_controller.dart';
+import '../auth/profile_avatar.dart';
 
 import 'staff_notification_bell.dart';
 
@@ -92,6 +94,7 @@ class StaffWebShell extends StatelessWidget {
             appBar: AppBar(
               title: Text(dests[index].label),
               actions: [
+                const ThemeModeButton(),
                 const StaffNotificationBell(),
 
                 if (AuthService().isStaffAccount)
@@ -103,7 +106,7 @@ class StaffWebShell extends StatelessWidget {
                 IconButton(
                   tooltip: 'My profile',
                   onPressed: () => context.push('/profile'),
-                  icon: const Icon(Icons.person_outline),
+                  icon: const MyAvatar(radius: 14),
                 ),
                 IconButton(
                   tooltip: 'Log out',
@@ -190,6 +193,7 @@ class StaffWebShell extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          const ThemeModeButton(),
                           const StaffNotificationBell(),
                           
                           if (extended && user != null)
@@ -209,7 +213,7 @@ class StaffWebShell extends StatelessWidget {
                           IconButton(
                             tooltip: 'My profile',
                             onPressed: () => context.push('/profile'),
-                            icon: const Icon(Icons.person_outline),
+                            icon: const MyAvatar(radius: 14),
                           ),
                           IconButton(
                             tooltip: 'Log out',

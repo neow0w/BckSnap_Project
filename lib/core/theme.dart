@@ -12,6 +12,15 @@ class AppColors {
   static const Color text = Color(0xFF1B2733);
   static const Color hint = Color(0xFF8A97A3);
 
+  // Dark mode
+  static const Color primaryLight = Color(0xFF4CB5E6); // readable on dark
+  static const Color darkBackground = Color(0xFF0F161D);
+  static const Color darkSurface = Color(0xFF182530);
+  static const Color darkFieldFill = Color(0xFF223140);
+  static const Color darkTonal = Color(0xFF263646);
+  static const Color darkBorder = Color(0xFF2B3B4A);
+  static const Color darkText = Color(0xFFE6EDF3);
+
   // Result levels
   static const Color normal = Color(0xFF1F9D6B);
   static const Color mild = Color(0xFFD99A1E);
@@ -22,10 +31,19 @@ class AppColors {
   static const Color facebook = Color(0xFF1877F2);
 }
 
-final ThemeData appTheme = _build();
+final ThemeData appTheme = _build(Brightness.light);
+final ThemeData appDarkTheme = _build(Brightness.dark);
 
-ThemeData _build() {
+ThemeData _build(Brightness brightness) {
   const radius = 12.0;
+  final dark = brightness == Brightness.dark;
+
+  final bg = dark ? AppColors.darkBackground : Colors.white;
+  final surface = dark ? AppColors.darkSurface : Colors.white;
+  final textColor = dark ? AppColors.darkText : AppColors.text;
+  final accent = dark ? AppColors.primaryLight : AppColors.primary;
+  final fieldFill = dark ? AppColors.darkFieldFill : AppColors.fieldFill;
+  final border = dark ? AppColors.darkBorder : AppColors.border;
 
   OutlineInputBorder inputBorder([Color? color, double width = 1]) =>
       OutlineInputBorder(
@@ -38,18 +56,19 @@ ThemeData _build() {
   final scheme =
       ColorScheme.fromSeed(
         seedColor: AppColors.primary,
-        brightness: Brightness.light,
+        brightness: brightness,
       ).copyWith(
-        primary: AppColors.primary,
-        surface: Colors.white,
+        primary: accent,
+        surface: surface,
         error: AppColors.high,
+        surfaceContainerHighest: dark ? AppColors.darkTonal : null,
       );
 
   final base = ThemeData(useMaterial3: true, colorScheme: scheme);
   final textTheme = base.textTheme.apply(
     fontFamily: GoogleFonts.poppins().fontFamily,
-    bodyColor: AppColors.text,
-    displayColor: AppColors.text,
+    bodyColor: textColor,
+    displayColor: textColor,
   );
 
   final buttonText = GoogleFonts.poppins(
@@ -59,32 +78,32 @@ ThemeData _build() {
   );
 
   return base.copyWith(
-    scaffoldBackgroundColor: Colors.white,
+    scaffoldBackgroundColor: bg,
     textTheme: textTheme,
     appBarTheme: AppBarTheme(
       centerTitle: true,
-      backgroundColor: Colors.white,
+      backgroundColor: bg,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
-      iconTheme: const IconThemeData(color: AppColors.primary),
-      actionsIconTheme: const IconThemeData(color: AppColors.primary),
+      iconTheme: IconThemeData(color: accent),
+      actionsIconTheme: IconThemeData(color: accent),
       titleTextStyle: GoogleFonts.poppins(
         fontSize: 18,
         fontWeight: FontWeight.w600,
-        color: AppColors.primary,
+        color: accent,
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.fieldFill,
+      fillColor: fieldFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       hintStyle: GoogleFonts.poppins(color: AppColors.hint, fontSize: 14),
       labelStyle: GoogleFonts.poppins(color: AppColors.hint, fontSize: 14),
       border: inputBorder(),
       enabledBorder: inputBorder(),
       disabledBorder: inputBorder(),
-      focusedBorder: inputBorder(AppColors.primary, 1.5),
+      focusedBorder: inputBorder(accent, 1.5),
       errorBorder: inputBorder(AppColors.high, 1),
       focusedErrorBorder: inputBorder(AppColors.high, 1.5),
     ),
@@ -99,8 +118,8 @@ ThemeData _build() {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.primary,
-        side: const BorderSide(color: AppColors.primary),
+        foregroundColor: accent,
+        side: BorderSide(color: accent),
         minimumSize: const Size(64, 52),
         shape: const StadiumBorder(),
         textStyle: buttonText,
@@ -108,7 +127,7 @@ ThemeData _build() {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: AppColors.primary,
+        foregroundColor: accent,
         textStyle: GoogleFonts.poppins(
           fontSize: 13,
           fontWeight: FontWeight.w600,
@@ -116,16 +135,16 @@ ThemeData _build() {
       ),
     ),
     cardTheme: CardThemeData(
-      color: Colors.white,
+      color: surface,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.border),
+        side: BorderSide(color: border),
       ),
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: Colors.white,
+      backgroundColor: surface,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     ),
@@ -133,6 +152,6 @@ ThemeData _build() {
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
-    dividerTheme: const DividerThemeData(color: AppColors.border),
+    dividerTheme: DividerThemeData(color: border),
   );
 }

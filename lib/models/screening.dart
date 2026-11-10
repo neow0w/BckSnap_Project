@@ -7,7 +7,7 @@ class Screening {
   final bool hasScoliosis;
   final bool hasPhoto;
   final DateTime createdAt;
-  final Map<String, dynamic>? details; // levels and posture of the screening
+  final Map<String, dynamic>? details; // levels of the screening
 
   /// true = the account holder; false = someone else (see [subject]).
   final bool forSelf;

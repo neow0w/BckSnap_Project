@@ -27,9 +27,9 @@ class PrivacyNotice {
 
   /// Short version shown on the consent step.
   static const List<String> summary = [
-    'BckSnap collects your age, sex, profile details, posture photographs, '
-        'screening results, and evaluation questionnaire responses.',
-    'Your information is used for posture screening, trunk rotation '
+    'BckSnap collects your age, sex, profile details, screening results, '
+        'and evaluation questionnaire responses.',
+    'Your information is used for scoliosis screening, trunk rotation '
         'assessment, clinic referrals, and academic system evaluation '
         'under the ISO/IEC 25010 framework.',
     'Your personal identity is separated from screening records using '
@@ -37,9 +37,9 @@ class PrivacyNotice {
         'researchers and the research adviser.',
     'You may access, correct, or request deletion of your personal data. '
         'You may also withdraw your consent before dataset consolidation.',
-    'Your personal information and raw screening photographs will be '
-        'securely deleted after the capstone project is completed, '
-        'defended, and approved.',
+    'Your personal information will be securely deleted after the'
+        'capstone project is completed, defended, '
+        'and approved.',
   ];
 
   static const List<NoticeSection> sections = [
@@ -59,15 +59,13 @@ class PrivacyNotice {
 
     NoticeSection(
       '2. What We Collect',
-      'To perform posture screening, compute trunk rotation metrics, '
+      'To perform screening, compute trunk rotation metrics, '
           'and facilitate clinic referrals, BckSnap collects the '
           'following categories of data:\n\n'
           '• Account and Profile Details: Your age, sex, and basic '
           'profile identifiers collected during registration or screening.\n\n'
-          '• Screening and Posture Data: Digital photographs of the back '
-          'captured during app-assisted posture checks and Adam\'s Forward '
-          'Bend Test (AFBT) workflows, along with pose-estimation '
-          'asymmetry metrics and risk classifications.\n\n'
+          '• Screening Data: Trunk rotation (ATR) readings at each back level, '
+          'the resulting risk classification, and the date of each screening.\n\n'
           '• Evaluation Data: Responses provided through the ISO/IEC 25010 '
           'system evaluation questionnaires by user beneficiaries '
           'and clinic staff.',
@@ -77,7 +75,8 @@ class PrivacyNotice {
       '3. How BckSnap Uses Your Data',
       'Your data is processed within the app environment and research '
           'pipeline for the following purposes:\n\n'
-          '• Executing on-device camera tracking and posture calculations.\n\n'
+          '• Reading the phone\'s motion sensor to compute trunk rotation '
+          '(ATR) measurements.\n\n'
           '• Generating screening risk assessments and connecting you '
           'with local partner clinics if a referral is needed.\n\n'
           '• Evaluating app usability and software quality under the '

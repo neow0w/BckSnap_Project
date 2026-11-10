@@ -15,7 +15,6 @@ import '../features/receptionist/clinic_location_screen.dart';
 import '../features/receptionist/inbox_screen.dart';
 import '../features/receptionist/patient_chat_screen.dart';
 import '../features/receptionist/staff_appointments_screen.dart';
-import '../features/screening/camera_capture_screen.dart';
 import '../features/screening/measurement_screen.dart';
 import '../features/screening/person_info_screen.dart';
 import '../features/screening/progress_screen.dart';
@@ -49,6 +48,7 @@ import '../features/auth/profile_picker_screen.dart';
 import '../features/receptionist/doctor_profiles_screen.dart';
 import '../features/auth/clinic_registration_screen.dart';
 import '../features/developer/developer_clinics_page.dart';
+import '../features/screening/questionnaire_screen.dart';
 
 // Old imports of homeFor from this file keep working.
 export 'home_for.dart' show homeFor;
@@ -291,17 +291,13 @@ final List<RouteBase> _mobileRoutes = [
     builder: (c, s) => const PersonInfoScreen(),
   ),
   GoRoute(
-    path: '/screening/guide',
-    builder: (c, s) => const ScreeningStepsScreen(method: 'pose'),
-  ),
-  GoRoute(
     path: '/screening/steps/:method',
     builder: (c, s) =>
         ScreeningStepsScreen(method: s.pathParameters['method']!),
   ),
   GoRoute(
-    path: '/screening/photo',
-    builder: (c, s) => const CameraCaptureScreen(),
+    path: '/screening/questionnaire',
+    builder: (c, s) => const QuestionnaireScreen(),
   ),
   GoRoute(
     path: '/screening/test',

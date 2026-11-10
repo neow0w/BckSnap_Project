@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
-import '../../services/screening_draft.dart';
 
 class _StepInfo {
   final IconData icon;
@@ -10,27 +9,6 @@ class _StepInfo {
   final String text;
   const _StepInfo(this.icon, this.title, this.text);
 }
-
-const _poseSteps = [
-  _StepInfo(
-    Icons.accessibility_new,
-    'Stand Straight & Show Your Back',
-    'Stand facing away from the camera with your arms relaxed. Wear snug '
-        'clothing and tie long hair up so your back is clear.',
-  ),
-  _StepInfo(
-    Icons.light_mode_outlined,
-    'Find A Bright, Clear Space',
-    'Stand about 2 metres away from the phone in a bright room with a '
-        'simple background.',
-  ),
-  _StepInfo(
-    Icons.smartphone,
-    'Line Up & Keep Phone Straight',
-    'Fit the outline on the screen to your back and hold the phone upright '
-        'until the level guide turns green.',
-  ),
-];
 
 const _scolioSteps = [
   _StepInfo(
@@ -67,8 +45,7 @@ class _ScreeningStepsScreenState extends State<ScreeningStepsScreen> {
   final _pages = PageController();
   int _index = 0;
 
-  List<_StepInfo> get _steps =>
-      widget.method == 'pose' ? _poseSteps : _scolioSteps;
+  List<_StepInfo> get _steps => _scolioSteps;
 
   @override
   void dispose() {
@@ -76,19 +53,9 @@ class _ScreeningStepsScreenState extends State<ScreeningStepsScreen> {
     super.dispose();
   }
 
-  void _finish() => context.go(
-    widget.method == 'pose' ? '/screening/photo' : '/screening/test',
-  );
+  void _finish() => context.go('/screening/test');
 
-  void _back() {
-    if (widget.method == 'pose') {
-      context.go(
-        ScreeningDraft.forSelf ? '/screening/for' : '/screening/person',
-      );
-    } else {
-      context.go('/screening/photo');
-    }
-  }
+  void _back() => context.go('/screening/questionnaire');
 
   void _next() {
     if (_index >= _steps.length - 1) {
@@ -106,11 +73,7 @@ class _ScreeningStepsScreenState extends State<ScreeningStepsScreen> {
     final last = _index == _steps.length - 1;
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.method == 'pose'
-              ? 'Step 1 of 2: Back photo'
-              : 'Step 2 of 2: Scoliometer',
-        ),
+        title: const Text('Scoliometer'),
         leading: BackButton(onPressed: _back),
       ),
       body: SafeArea(

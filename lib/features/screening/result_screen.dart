@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
-import 'posture_analysis.dart';
 import 'screening_result.dart';
 
 class ResultScreen extends StatelessWidget {
@@ -32,12 +31,10 @@ class ResultScreen extends StatelessWidget {
         return (
           color: AppColors.mild,
           label: 'MILD RISK',
-          message: data.borderlineFromPhotoOnly
-              ? 'The trunk rotation was low (${_deg(data.highestAtr)}), but '
-                    'the photo showed a noticeable shoulder or hip tilt.'
-              : 'The highest trunk rotation was ${_deg(data.highestAtr)}, '
-                    'between ${ResultRules.borderlineAtr.toStringAsFixed(0)}° '
-                    'and ${ResultRules.referAtr.toStringAsFixed(0)}°.',
+          message:
+              'The highest trunk rotation was ${_deg(data.highestAtr)}, '
+              'between ${ResultRules.borderlineAtr.toStringAsFixed(0)}° '
+              'and ${ResultRules.referAtr.toStringAsFixed(0)}°.',
           next:
               'Repeat the screening in a few weeks. Ask a clinician if the '
               'result stays the same or you have concerns.',
@@ -86,11 +83,9 @@ class ResultScreen extends StatelessWidget {
                             color: AppColors.tonal,
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Text(
-                            data.posture != null
-                                ? 'POSE ESTIMATION + SCOLIOMETER'
-                                : 'DIGITAL SCOLIOMETER',
-                            style: const TextStyle(
+                          child: const Text(
+                            'DIGITAL SCOLIOMETER',
+                            style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
                               color: AppColors.primary,
@@ -200,38 +195,13 @@ class ResultScreen extends StatelessWidget {
     );
   }
 
-  // ---- findings box -------------------------------------------------------
-
-  String _higher(HigherSide h) =>
-      h == HigherSide.level ? 'level' : '${higherSideLabel(h)} higher';
-
-  String _lean(LeanSide s) =>
-      s == LeanSide.upright ? 'upright' : 'leans ${leanSideLabel(s)}';
-
+  // ---- findings box -----------------------------------------------------
   Widget _findings(BuildContext context) {
     final rows = <Widget>[
       for (final l in data.levels)
         _row(l.name, _deg(l.atr), bold: l.name == data.highestLevel),
       _row('Highest rotation (ATR)', _deg(data.highestAtr), bold: true),
     ];
-    final p = data.posture;
-    if (p == null) {
-      rows.add(_row('Posture photo', 'Not used'));
-    } else {
-      rows.addAll([
-        _row(
-          'Shoulder alignment',
-          '${_deg(p.shoulderTilt)} · ${_higher(p.higherShoulder)}',
-          flag: p.shoulderFlag,
-        ),
-        _row(
-          'Pelvic alignment',
-          '${_deg(p.hipTilt)} · ${_higher(p.higherHip)}',
-          flag: p.hipFlag,
-        ),
-        _row('Trunk lean', '${_deg(p.trunkLean)} · ${_lean(p.leanSide)}'),
-      ]);
-    }
     return Container(
       decoration: BoxDecoration(
         color: AppColors.fieldFill.withValues(alpha: 0.5),
@@ -249,12 +219,7 @@ class ResultScreen extends StatelessWidget {
     );
   }
 
-  Widget _row(
-    String label,
-    String value, {
-    bool bold = false,
-    bool flag = false,
-  }) {
+  Widget _row(String label, String value, {bool bold = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
@@ -268,11 +233,6 @@ class ResultScreen extends StatelessWidget {
               ),
             ),
           ),
-          if (flag)
-            const Padding(
-              padding: EdgeInsets.only(right: 4),
-              child: Icon(Icons.error_outline, size: 14, color: AppColors.mild),
-            ),
           Text(
             value,
             style: TextStyle(

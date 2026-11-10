@@ -55,8 +55,9 @@ class MessageService {
       'patientName': name,
       'clinicId': clinicId,
       'lastMessage': body,
+      'lastFromPatient': true,
       'lastAt': FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
     await batch.commit();
   });
 
@@ -93,6 +94,8 @@ class MessageService {
         });
         batch.update(_db.collection('threads').doc('${clinicId}_$patientId'), {
           'lastMessage': body,
+          'lastFromPatient': false,
+          'unreadForPatient': FieldValue.increment(1),
           'lastAt': FieldValue.serverTimestamp(),
         });
         await batch.commit();
@@ -129,5 +132,38 @@ class MessageService {
           list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
           return list;
         });
+  }
+
+  /// Live list of this patient's conversations, newest first.
+  Stream<List<PatientThread>> myThreadsStream() {
+    return _db
+        .collection('threads')
+        .where('patientId', isEqualTo: _me.id)
+        .snapshots()
+        .map((snap) {
+          final list = [
+            for (final d in snap.docs) PatientThread.fromMap(d.data()),
+          ];
+          list.sort(
+            (a, b) => (b.lastAt ?? DateTime(2000)).compareTo(
+              a.lastAt ?? DateTime(2000),
+            ),
+          );
+          return list;
+        });
+  }
+
+  /// Total unread messages, for the small badges.
+  Stream<int> unreadCountStream() => myThreadsStream().map(
+    (list) => list.fold<int>(0, (total, t) => total + t.unread),
+  );
+
+  /// The patient opened the conversation with this clinic.
+  Future<void> markThreadRead(String clinicId) async {
+    try {
+      await _db.collection('threads').doc('${clinicId}_${_me.id}').update({
+        'unreadForPatient': 0,
+      });
+    } catch (_) {} // no thread yet, or offline: nothing to do
   }
 }

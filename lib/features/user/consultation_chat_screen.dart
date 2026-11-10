@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/chat_widgets.dart';
+import '../../core/format.dart';
+import '../../core/theme.dart';
 import '../../models/consultation_message.dart';
 import '../../services/auth_service.dart';
 import '../../services/clinic_service.dart';
@@ -26,18 +30,20 @@ class _ConsultationChatScreenState extends State<ConsultationChatScreen> {
 
   bool _sending = false;
 
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-
     if (text.isEmpty || _sending) return;
 
-    setState(() {
-      _sending = true;
-    });
-
+    setState(() => _sending = true);
     try {
       await _service.sendConsultationMessage(widget.appointmentId, text);
-
       _messageController.clear();
     } catch (e) {
       if (mounted) {
@@ -46,70 +52,20 @@ class _ConsultationChatScreenState extends State<ConsultationChatScreen> {
         ).showSnackBar(SnackBar(content: Text('Failed to send message: $e')));
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _sending = false;
-        });
-      }
+      if (mounted) setState(() => _sending = false);
     }
   }
 
-  String _formatTime(DateTime dateTime) {
-    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
-
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    final period = dateTime.hour >= 12 ? 'PM' : 'AM';
-
-    return '$hour:$minute $period';
-  }
-
-  Widget _buildMessageBubble(
-    ConsultationMessage message,
-    String currentUserRole,
-  ) {
-    final isMine = message.senderRole == currentUserRole;
-
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: isMine ? const Color(0xFF2563EB) : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              message.text,
-              style: TextStyle(
-                color: isMine ? Colors.white : Colors.black87,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              _formatTime(message.createdAt),
-              style: TextStyle(
-                color: isMine ? Colors.white70 : Colors.black54,
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _messageController.dispose();
-    _scrollController.dispose();
-    super.dispose();
+  void _scrollToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   @override
@@ -117,28 +73,17 @@ class _ConsultationChatScreenState extends State<ConsultationChatScreen> {
     final currentUserRole = _auth.profileSessionToken != null
         ? 'doctor'
         : 'patient';
+    final embedded = widget.onClose != null;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Consultation Chat',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-            ),
-            Text(
-              'Private appointment conversation',
-              style: TextStyle(fontSize: 11),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF1E293B),
-        elevation: 1,
+      backgroundColor: Colors.white,
+      appBar: chatAppBar(
+        title: 'Consultation Chat',
+        subtitle: 'Private appointment conversation',
+        showBack: !embedded,
+        onBack: () => context.canPop() ? context.pop() : context.go('/home'),
         actions: [
-          if (widget.onClose != null)
+          if (embedded)
             IconButton(
               onPressed: widget.onClose,
               icon: const Icon(Icons.close),
@@ -155,45 +100,29 @@ class _ConsultationChatScreenState extends State<ConsultationChatScreen> {
                 if (snapshot.hasError) {
                   return const Center(child: Text('Unable to load messages.'));
                 }
-
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
                 final messages = snapshot.data ?? [];
-
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_scrollController.hasClients) {
-                    _scrollController.animateTo(
-                      _scrollController.position.maxScrollExtent,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOut,
-                    );
-                  }
-                });
+                _scrollToEnd();
 
                 if (messages.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.chat_bubble_outline,
                           size: 48,
-                          color: Colors.grey,
+                          color: AppColors.primary,
                         ),
-                        SizedBox(height: 12),
-                        Text(
-                          'No messages yet',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        SizedBox(height: 5),
+                        const SizedBox(height: 12),
+                        const Text('No messages yet'),
+                        const SizedBox(height: 4),
                         Text(
                           'Start your conversation here.',
-                          style: TextStyle(color: Colors.grey),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
@@ -202,74 +131,26 @@ class _ConsultationChatScreenState extends State<ConsultationChatScreen> {
 
                 return ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    return _buildMessageBubble(
-                      messages[index],
-                      currentUserRole,
+                  itemBuilder: (context, i) {
+                    final m = messages[i];
+                    return ChatBubble(
+                      text: m.text,
+                      time: formatTime(m.createdAt),
+                      mine: m.senderRole == currentUserRole,
                     );
                   },
                 );
               },
             ),
           ),
-          SafeArea(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: Colors.grey.shade200)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      minLines: 1,
-                      maxLines: 4,
-                      maxLength: 4000,
-                      decoration: InputDecoration(
-                        hintText: 'Type a message...',
-                        counterText: '',
-                        filled: true,
-                        fillColor: const Color(0xFFF1F5F9),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                      onSubmitted: (_) {
-                        if (!_sending &&
-                            _messageController.text.trim().isNotEmpty) {
-                          _sendMessage();
-                        }
-                      },
-                      textInputAction: TextInputAction.send,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _sending ? null : _sendMessage,
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                    style: IconButton.styleFrom(
-                      backgroundColor: const Color(0xFF2563EB),
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          const Divider(height: 1),
+          ChatInputBar(
+            controller: _messageController,
+            sending: _sending,
+            onSend: _sendMessage,
+            maxLength: 4000,
           ),
         ],
       ),

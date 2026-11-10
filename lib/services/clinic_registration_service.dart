@@ -94,7 +94,11 @@ class ClinicRegistrationService {
   }
 
   /// Creates the clinic and activates the applicant as its administrator.
-  Future<void> approve(ClinicRegistration r) async {
+  Future<void> approve(
+    ClinicRegistration r, {
+    double? latitude,
+    double? longitude,
+  }) async {
     final me = _me;
     try {
       final clinicRef = _db.collection('clinics').doc();
@@ -103,8 +107,8 @@ class ClinicRegistrationService {
         'name': r.clinicName,
         'description': r.description,
         'address': r.address,
-        'latitude': null,
-        'longitude': null,
+        'latitude': latitude,
+        'longitude': longitude,
         'phone': r.phone,
         'email': r.clinicEmail,
         'timezone': 'Asia/Manila',

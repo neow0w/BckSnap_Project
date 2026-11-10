@@ -328,6 +328,13 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
   void _openClinic(ClinicInfo clinic) =>
       context.push('/clinics/${clinic.id}', extra: clinic);
 
+  ButtonStyle get _compactStyle => OutlinedButton.styleFrom(
+    minimumSize: const Size(0, 44),
+    padding: const EdgeInsets.symmetric(horizontal: 10),
+    textStyle: Theme.of(context).textTheme.labelLarge
+        ?.copyWith(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0),
+  );
+
   Widget _filtersPanel() {
     final services = _allServices.values.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -335,23 +342,41 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        Row(
           children: [
-            OutlinedButton.icon(
-              onPressed: _requestLocation,
-              icon: const Icon(Icons.my_location),
-              label: const Text('Use my location'),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: _compactStyle,
+                onPressed: _requestLocation,
+                icon: const Icon(Icons.my_location, size: 18),
+                label: const Text(
+                  'Use my location',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
-            OutlinedButton.icon(
-              onPressed: _searchLocation,
-              icon: const Icon(Icons.place_outlined),
-              label: const Text('Search location'),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: _compactStyle,
+                onPressed: _searchLocation,
+                icon: const Icon(Icons.place_outlined, size: 18),
+                label: const Text(
+                  'Search location',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
-            if (_location != null)
-              InputChip(
+          ],
+        ),
+        if (_location != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: InputChip(
                 avatar: const Icon(Icons.place, size: 18),
                 label: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 220),
@@ -365,8 +390,8 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
                   _load();
                 },
               ),
-          ],
-        ),
+            ),
+          ),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -523,8 +548,14 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
   }
 
   Widget _buildList() {
-    if (_loading && _clinics.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+    if (_clinics.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: _emptyState(
+          'No clinics found',
+          'Try another name or service, choose a different location, ',
+        ),
+      );
     }
     if (_clinics.isEmpty) {
       return _emptyState(
@@ -586,52 +617,46 @@ class _ClinicDiscoveryScreenState extends State<ClinicDiscoveryScreen> {
     );
   }
 
-  Widget _buildErrorState() => Center(
-    child: Padding(
+  Widget _buildErrorState() => RefreshIndicator(
+    onRefresh: _load,
+    child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off_outlined, size: 44),
-          const SizedBox(height: 12),
-          Text(
-            'Clinic search is unavailable',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(_error!, textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
-          ),
-        ],
-      ),
+      children: [
+        const SizedBox(height: 60),
+        const Center(child: Icon(Icons.cloud_off_outlined, size: 44)),
+        const SizedBox(height: 12),
+        Text(
+          'Clinic search is unavailable',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(_error!, textAlign: TextAlign.center),
+        const SizedBox(height: 8),
+        Text(
+          'Pull down to try again.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
     ),
   );
 
-  Widget _emptyState(String title, String description, {Widget? action}) =>
-      Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.location_searching, size: 44),
-              const SizedBox(height: 12),
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(description, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              action ??
-                  OutlinedButton.icon(
-                    onPressed: _load,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Refresh'),
-                  ),
-            ],
-          ),
-        ),
-      );
+  Widget _emptyState(String title, String description) => ListView(
+    physics: const AlwaysScrollableScrollPhysics(),
+    padding: const EdgeInsets.all(32),
+    children: [
+      const SizedBox(height: 60),
+      const Center(child: Icon(Icons.location_searching, size: 44)),
+      const SizedBox(height: 12),
+      Text(
+        title,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      const SizedBox(height: 8),
+      Text(description, textAlign: TextAlign.center),
+    ],
+  );
 }

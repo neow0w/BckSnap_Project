@@ -6,6 +6,7 @@ import '../../core/format.dart';
 import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/clinic_registration_service.dart';
+import '../../services/clinic_service.dart';
 
 /// Developer: reviews the clinics that registered on the website.
 class DeveloperClinicsPage extends StatefulWidget {
@@ -88,7 +89,16 @@ class _DeveloperClinicsPageState extends State<DeveloperClinicsPage> {
       ),
     );
     if (ok != true) return;
-    await _run(r.id, () => _service.approve(r));
+    double? lat;
+    double? lng;
+    try {
+      final found = await ClinicService().geocode(r.address);
+      if (found.isNotEmpty) {
+        lat = found.first.latitude;
+        lng = found.first.longitude;
+      }
+    } catch (_) {} // the admin can fix it on the Clinic page
+    await _run(r.id, () => _service.approve(r, latitude: lat, longitude: lng));
   }
 
   Future<void> _reject(ClinicRegistration r) async {
